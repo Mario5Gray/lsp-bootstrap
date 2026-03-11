@@ -314,6 +314,24 @@ Claude Code (or Codex) reads `.mcp.json` / `~/.codex/config.toml` at startup and
 3. **Response** — LSP replies with structured data (type info, location, diagnostics). `mcp-language-server` converts it to MCP JSON and returns it to the agents.
 4. **No persistent state in the bridge** — `mcp-language-server` is stateless beyond the stdio pipe; all language intelligence lives in the LSP process. Restarting Claude Code kills and respawns the entire chain.
 
+### Available MCP tools
+
+Once `.mcp.json` is loaded, the agent has access to these tools:
+
+| Tool | What it returns |
+|---|---|
+| `hover` | Type signature and docstring at a file/line/col position |
+| `definition` | Complete source of a named symbol |
+| `references` | Every file and location where a named symbol appears |
+| `diagnostics` | Type errors, warnings, and missing imports for a file |
+| `document_symbols` | All symbols (functions, types, variables) defined in a file |
+| `rename_symbol` | Renames a symbol and updates all references across the project |
+| `incoming_calls` | All callers of a function at a given position |
+| `outgoing_calls` | All functions called by a function at a given position |
+| `find_implementations` | All concrete implementations of an interface or abstract method |
+
+> **Note on `rename_symbol`:** this applies changes immediately — it does not produce a preview diff. Review the call sites with `references` first.
+
 ---
 
 ## Project phases
