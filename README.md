@@ -1,12 +1,12 @@
 # lsp-bootstrap
 
-A single-file bootstrap kit that drops LSP (Language Server Protocol) tooling into any repo. Copy one script, run it, and get type-checking, go-to-definition, and MCP-wired language intelligence in Claude Code — all with machine-specific paths baked in and gitignored.
+A single-file bootstrap kit that drops LSP (Language Server Protocol) tooling into any repo. Copy one script, run it, and get type-checking, go-to-definition, and MCP-wired language intelligence in Claude Code and Codex — all with machine-specific paths baked in and gitignored.
 
 ---
 
 ## Overview
 
-`generate-env-lsp.sh` is the entry point. Drop it into any project directory (e.g. `~/workspace/Stability-Toys/`) and run it once. It will:
+`generate-env-lsp.sh` is the entry point. Drop it into any project directory (e.g. `~/workspace/my-project/`) and run it once. It will:
 
 1. Resolve absolute paths to `python`, `pyright-langserver`, `typescript-language-server`, and `mcp-language-server`
 2. Write **`env.lsp`** — a machine-specific env file (gitignored)
@@ -14,7 +14,14 @@ A single-file bootstrap kit that drops LSP (Language Server Protocol) tooling in
 4. Scaffold **`pyrightconfig.json`** for Python projects (if missing)
 5. Scaffold **`jsconfig.json`** for JS/TS projects (if missing)
 6. Write **`.mcp.json`** to wire up `mcp-language-server` into Claude Code (gitignored)
-7. Add `env.lsp`, `env.custom`, and `.mcp.json` to `.gitignore`
+7. Update **`~/.codex/config.toml`** with the same language server entries for Codex
+8. Add `env.lsp`, `env.custom`, and `.mcp.json` to `.gitignore`
+
+Pass `--codex` to also wire the Codex CLI itself as an MCP server in `.mcp.json`:
+
+```bash
+./generate-env-lsp.sh --codex
+```
 
 Re-run any time you switch Python environments (new venv, conda, etc.) or need to refresh paths.
 
@@ -31,7 +38,7 @@ npm install -g pyright typescript-language-server typescript
 # Rust LSP (optional — needed for Rust projects)
 rustup component add rust-analyzer
 
-# MCP bridge (optional — enables .mcp.json generation)
+# MCP bridge (optional — enables .mcp.json and ~/.codex/config.toml generation)
 # Option A: go install (requires Go 1.21+)
 go install github.com/isaacs/mcp-language-server@latest
 
@@ -42,6 +49,9 @@ go build -o mcp-language-server .
 # Move to somewhere on your PATH, e.g.:
 mv mcp-language-server /usr/local/bin/
 cd ..
+
+# Codex CLI (optional — only needed for --codex flag)
+npm install -g @openai/codex
 ```
 
 Check your installs:
@@ -50,6 +60,7 @@ which pyright-langserver
 which typescript-language-server
 which rust-analyzer          # optional
 which mcp-language-server    # optional
+which codex                  # optional, for --codex flag
 ```
 
 ---
@@ -58,8 +69,8 @@ which mcp-language-server    # optional
 
 ```bash
 # 1. Copy the generator into your target project
-cp generate-env-lsp.sh ~/workspace/Stability-Toys/
-cd ~/workspace/Stability-Toys/
+cp generate-env-lsp.sh ~/workspace/my-project/
+cd ~/workspace/my-project/
 
 # 2. Run it
 ./generate-env-lsp.sh
@@ -68,12 +79,19 @@ cd ~/workspace/Stability-Toys/
 ./check-types.sh
 
 # 4. Restart Claude Code to load .mcp.json (if mcp-language-server was found)
+#    ~/.codex/config.toml is updated automatically (no restart needed for Codex)
 ```
 
 Pass `--force` to overwrite previously generated files:
 
 ```bash
 ./generate-env-lsp.sh --force
+```
+
+Pass `--codex` to also add the Codex CLI as an MCP server in `.mcp.json`:
+
+```bash
+./generate-env-lsp.sh --codex
 ```
 
 ---
@@ -134,6 +152,30 @@ One entry is generated per detected language. Example for a Python + Rust projec
 
 Mixed projects (e.g. Python backend + Rust extension) get all relevant entries. No extra config file is needed for Rust — `rust-analyzer` reads `Cargo.toml` natively.
 
+When `--codex` is passed and the `codex` binary is found, an additional entry is added to `.mcp.json` only (not to `~/.codex/config.toml` — Codex does not need itself as a server):
+
+```json
+"codex": {
+  "command": "/path/to/codex",
+  "args": ["--mcp-server"],
+  "env": {}
+}
+```
+
+### `~/.codex/config.toml` (global, not committed)
+
+Updated automatically whenever `mcp-language-server` is found — no `--codex` flag required. The same language server entries written to `.mcp.json` are appended to your global Codex config in TOML format:
+
+```toml
+[mcp_servers.language-server-python]
+command = "/path/to/mcp-language-server"
+transport = "stdio"
+args = ["-workspace", "/path/to/project", "-lsp", "/path/to/pyright-langserver", "--", "--stdio"]
+env = {"LOG_LEVEL" = "INFO"}
+```
+
+Existing entries are skipped unless `--force` is passed. Because this file is global (`~/.codex/`), it is not gitignored — each machine manages its own copy.
+
 ### `pyrightconfig.json` (committed)
 
 Scaffolded for Python projects. Review the `include` list — the generator tries to detect top-level packages but may need adjustment:
@@ -161,7 +203,8 @@ Scaffolded for JS/TS projects. Adjust `paths` aliases as needed.
 
 | Command | What it does |
 |---|---|
-| `./generate-env-lsp.sh` | Re-resolve paths and regenerate `env.lsp` + `.mcp.json` |
+| `./generate-env-lsp.sh` | Re-resolve paths and regenerate `env.lsp`, `.mcp.json`, `~/.codex/config.toml` |
+| `./generate-env-lsp.sh --codex` | Also wire the Codex CLI as an MCP server in `.mcp.json` |
 | `./generate-env-lsp.sh --force` | Overwrite all generated files (including scripts) |
 | `./check-types.sh` | Run pyright over the whole project |
 | `./check-types.sh path/to/file.py` | Check a single file |
