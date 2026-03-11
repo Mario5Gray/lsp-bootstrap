@@ -29,6 +29,41 @@ lsp-mcp-bridge/
 
 ---
 
+## Step 0 — Test scaffolding
+
+Write all acceptance test bodies and fixture files before any implementation. Tests carry `t.Skip("not yet implemented")` and a `//go:build acceptance` tag. Each subsequent step removes the skip from the tests it satisfies.
+
+**Why first:** acceptance tests written after implementation describe what was built. Written before, they define what must be built — they are the spec in executable form.
+
+### Files to create
+
+```
+lsp-mcp-bridge/
+  go.mod
+  acceptance_test.go          # A1–A10, B1–B6, F1–F4 — all skipped initially
+  testutil/
+    mock_lsp.go               # mock LSP server: stdin→stdout JSON-RPC, scriptable responses
+    env.go                    # NewMockClient() helper; TempEnvLsp() fixture loader
+    fixtures/
+      env.lsp                 # fixture config with placeholder binary paths
+      sample.py               # typed Python with a known symbol for hover/definition/references
+      sample_error.py         # Python file with a deliberate type mismatch
+      sample.go               # typed Go with a known symbol
+```
+
+**Skip removal schedule:**
+
+| Tests | Remove skip after |
+|---|---|
+| A6, A7, F1, F2, F3 | Step 4 (manager.go) |
+| A1–A5, A8–A10 | Step 5 (tools_3a.go) |
+| B1–B6 | Step 7 (tools_3b.go) |
+| F4 | Step 7 (tools_3b.go) |
+
+**Done when:** `go test -tags acceptance ./...` compiles cleanly with all tests skipped; fixtures load without error.
+
+---
+
 ## Step 1 — `config.go`
 
 ```go

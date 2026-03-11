@@ -132,6 +132,16 @@ lsp-mcp-bridge/
 
 ---
 
+## Architectural Decisions (Closed)
+
+Decisions that were considered and explicitly rejected. Do not reopen without a new forcing function.
+
+| Decision | Rejected approach | Reason |
+|---|---|---|
+| Keep `generate-env-lsp.sh` as bash | Fold into `lsp-mcp-bridge init` subcommand | (1) Bash script has zero prerequisites — non-Go users can bootstrap without installing Go. (2) A binary that both bootstraps and serves is dual-scoped; single responsibility is preferred. |
+
+---
+
 ## Deployment Method
 
 - **Host-local daemon** — started by `start-lsp.sh`, stopped by `stop-lsp.sh`
@@ -150,7 +160,7 @@ lsp-mcp-bridge/
 ## Runtime Goal
 
 - **Latency:** first tool call on a cold slot (LSP not yet started) may take 2–8 seconds (indexing). Subsequent calls within a session target <500ms.
-- **Memory:** ~80–400 MB per live LSP process (language-dependent); bridge itself <20 MB. Acceptable on 16 GB+ machines.
+- **Memory:** ~80–400 MB per live LSP process (language-dependent); bridge itself <20 MB. Acceptable on 1GB+ machines.
 - **Concurrency:** tool calls are serialised per language slot (one JSON-RPC connection per LSP process). Concurrent calls to different slots proceed in parallel.
 - **Availability:** best-effort. Crash-restart with a 3-attempt limit. No HA, no replication.
 - **Correctness over speed:** the bridge is a dev tool. Returning accurate results matters more than sub-100ms latency.
