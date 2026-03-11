@@ -224,6 +224,38 @@ Scaffolded for JS/TS projects. Adjust `paths` aliases as needed.
 
 ---
 
+## Runtime behaviour
+
+### Architecture
+
+```
+Claude Code / Codex
+      │  MCP (JSON-RPC over stdio)
+      ▼
+mcp-language-server          ← MCP server process (one per language)
+      │  LSP (JSON-RPC over stdio)
+      ▼
+gopls / pyright / rust-analyzer / tsserver
+      │  reads
+      ▼
+workspace files on disk
+```
+
+Each language gets its own `mcp-language-server` process. That process owns a single LSP child process and translates between the MCP tool protocol and LSP.
+
+### MCP connection
+
+Claude Code (or Codex) reads `.mcp.json` / `~/.codex/config.toml` at startup and spawns each listed server as a subprocess connected via stdio. The agents calls MCP tools (`definition`, `references`, `hover`, `diagnostics`, etc.); `mcp-language-server` forwards them as LSP requests and returns the results.
+
+### Data lifecycle
+
+1. **File open** — the LSP server is notified of the workspace root at startup; it indexes files lazily on first request.
+2. **Request** — agents calls an MCP tool (e.g. `hover` at a symbol). `mcp-language-server` sends `textDocument/hover` to the LSP process.
+3. **Response** — LSP replies with structured data (type info, location, diagnostics). `mcp-language-server` converts it to MCP JSON and returns it to the agents.
+4. **No persistent state in the bridge** — `mcp-language-server` is stateless beyond the stdio pipe; all language intelligence lives in the LSP process. Restarting Claude Code kills and respawns the entire chain.
+
+---
+
 ## Project phases
 
 | Phase | Status | Description |
