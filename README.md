@@ -8,7 +8,7 @@ A single-file bootstrap kit that drops LSP (Language Server Protocol) tooling in
 
 `generate-env-lsp.sh` is the entry point. Drop it into any project directory (e.g. `~/workspace/my-project/`) and run it once. It will:
 
-1. Resolve absolute paths to `python`, `pyright-langserver`, `typescript-language-server`, and `mcp-language-server`
+1. Resolve absolute paths to `python`, `pyright-langserver`, `typescript-language-server`, `rust-analyzer`, `gopls`, and `mcp-language-server`
 2. Write **`env.lsp`** — a machine-specific env file (gitignored)
 3. Write **`start-lsp.sh`**, **`stop-lsp.sh`**, **`check-types.sh`** (skip if already present)
 4. Scaffold **`pyrightconfig.json`** for Python projects (if missing)
@@ -38,6 +38,9 @@ npm install -g pyright typescript-language-server typescript
 # Rust LSP (optional — needed for Rust projects)
 rustup component add rust-analyzer
 
+# Go LSP (optional — needed for Go projects)
+go install golang.org/x/tools/gopls@latest
+
 # MCP bridge (optional — enables .mcp.json and ~/.codex/config.toml generation)
 # Option A: go install (requires Go 1.21+)
 go install github.com/isaacs/mcp-language-server@latest
@@ -59,6 +62,7 @@ Check your installs:
 which pyright-langserver
 which typescript-language-server
 which rust-analyzer          # optional
+which gopls                  # optional
 which mcp-language-server    # optional
 which codex                  # optional, for --codex flag
 ```
@@ -126,7 +130,7 @@ LSP_PORT=7891
 
 Wires `mcp-language-server` into Claude Code. Contains absolute paths, so it is gitignored. **Restart Claude Code after this file is written** for it to take effect.
 
-One entry is generated per detected language. Example for a Python + Rust project:
+One entry is generated per detected language. Example for a Python + Rust + Go project:
 ```json
 {
   "mcpServers": {
@@ -139,6 +143,11 @@ One entry is generated per detected language. Example for a Python + Rust projec
       "command": "/path/to/mcp-language-server",
       "args": ["-workspace", "/path/to/project", "-lsp", "/path/to/rust-analyzer"],
       "env": { "LOG_LEVEL": "INFO" }
+    },
+    "language-server-go": {
+      "command": "/path/to/mcp-language-server",
+      "args": ["-workspace", "/path/to/project", "-lsp", "/path/to/gopls"],
+      "env": { "LOG_LEVEL": "INFO" }
     }
   }
 }
@@ -149,8 +158,9 @@ One entry is generated per detected language. Example for a Python + Rust projec
 | Python | `setup.py`, `pyproject.toml`, `requirements.txt`, common dirs | `pyright-langserver` |
 | JavaScript/TypeScript | `package.json`, `jsconfig.json` | `typescript-language-server` |
 | Rust | `Cargo.toml` | `rust-analyzer` |
+| Go | `go.mod` | `gopls` |
 
-Mixed projects (e.g. Python backend + Rust extension) get all relevant entries. No extra config file is needed for Rust — `rust-analyzer` reads `Cargo.toml` natively.
+Mixed projects get all relevant entries. No extra config file is needed for Rust or Go — `rust-analyzer` reads `Cargo.toml` and `gopls` reads `go.mod` natively.
 
 When `--codex` is passed and the `codex` binary is found, an additional entry is added to `.mcp.json` only (not to `~/.codex/config.toml` — Codex does not need itself as a server):
 
@@ -240,7 +250,11 @@ source .venv/bin/activate        # venv
 ./generate-env-lsp.sh
 ```
 
-The generator auto-detects Python projects (looks for `setup.py`, `pyproject.toml`, `requirements.txt`, or common dirs like `src/`, `backends/`, `server/`) and JS projects (`package.json`).
+The generator auto-detects project types:
+- **Python** — `setup.py`, `pyproject.toml`, `requirements.txt`, or common dirs (`src/`, `backends/`, `server/`)
+- **JavaScript/TypeScript** — `package.json` or `jsconfig.json`
+- **Rust** — `Cargo.toml`
+- **Go** — `go.mod`
 
 ---
 
