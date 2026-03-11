@@ -99,6 +99,24 @@ else
     ok "gopls → $LSP_GOPLS_BIN"
 fi
 
+# kotlin-language-server is optional — warn but don't fail
+LSP_KOTLIN_BIN="$(which kotlin-language-server 2>/dev/null || true)"
+if [ -z "$LSP_KOTLIN_BIN" ]; then
+    printf "  \033[33mwarn\033[0m   kotlin-language-server not found (Kotlin LSP will be skipped)\n"
+    printf "         Install: https://github.com/fwcd/kotlin-language-server/releases\n"
+else
+    ok "kotlin-language-server → $LSP_KOTLIN_BIN"
+fi
+
+# metals is optional — warn but don't fail
+LSP_METALS_BIN="$(which metals 2>/dev/null || true)"
+if [ -z "$LSP_METALS_BIN" ]; then
+    printf "  \033[33mwarn\033[0m   metals not found (Scala LSP will be skipped)\n"
+    printf "         Install: https://scalameta.org/metals/docs/editors/vim#installation\n"
+else
+    ok "metals → $LSP_METALS_BIN"
+fi
+
 # mcp-language-server is optional — warn but don't fail
 LSP_MCP_BIN="$(which mcp-language-server 2>/dev/null || true)"
 if [ -z "$LSP_MCP_BIN" ]; then
@@ -150,11 +168,27 @@ if [ -d "$REPO_ROOT/src" ] || [ -d "$REPO_ROOT/backends" ] || \
 HAS_GO=0
 [ -f "$REPO_ROOT/go.mod" ] && HAS_GO=1
 
+HAS_KOTLIN=0
+if [ -f "$REPO_ROOT/build.gradle.kts" ] || [ -f "$REPO_ROOT/settings.gradle.kts" ]; then
+    HAS_KOTLIN=1
+elif find "$REPO_ROOT" -maxdepth 3 -name "*.kt" -print -quit 2>/dev/null | grep -q .; then
+    HAS_KOTLIN=1
+fi
+
+HAS_SCALA=0
+if [ -f "$REPO_ROOT/build.sbt" ]; then
+    HAS_SCALA=1
+elif find "$REPO_ROOT" -maxdepth 3 -name "*.scala" -print -quit 2>/dev/null | grep -q .; then
+    HAS_SCALA=1
+fi
+
 [ "$HAS_PYTHON" -eq 1 ] && ok "Python project detected"
 [ "$HAS_JS" -eq 1 ]     && ok "JavaScript project detected"
 [ "$HAS_RUST" -eq 1 ]   && ok "Rust project detected"
 [ "$HAS_GO" -eq 1 ]     && ok "Go project detected"
-[ "$HAS_PYTHON" -eq 0 ] && [ "$HAS_JS" -eq 0 ] && [ "$HAS_RUST" -eq 0 ] && [ "$HAS_GO" -eq 0 ] && ok "No specific project type detected (generic)"
+[ "$HAS_KOTLIN" -eq 1 ] && ok "Kotlin project detected"
+[ "$HAS_SCALA" -eq 1 ]  && ok "Scala project detected"
+[ "$HAS_PYTHON" -eq 0 ] && [ "$HAS_JS" -eq 0 ] && [ "$HAS_RUST" -eq 0 ] && [ "$HAS_GO" -eq 0 ] && [ "$HAS_KOTLIN" -eq 0 ] && [ "$HAS_SCALA" -eq 0 ] && ok "No specific project type detected (generic)"
 
 # ── 3. write env.lsp ──────────────────────────────────────────────────────
 
@@ -439,6 +473,30 @@ if [ -n "$LSP_MCP_BIN" ]; then
         CODEX_SEP=","
     fi
 
+    if [ "$HAS_KOTLIN" -eq 1 ] && [ -n "$LSP_KOTLIN_BIN" ]; then
+        MCP_ENTRIES="${MCP_ENTRIES}${MCP_SEP}
+    \"language-server-kotlin\": {
+      \"command\": \"$LSP_MCP_BIN\",
+      \"args\": [\"-workspace\", \"$REPO_ROOT\", \"-lsp\", \"$LSP_KOTLIN_BIN\"],
+      \"env\": { \"LOG_LEVEL\": \"INFO\" }
+    }"
+        CODEX_SERVERS="${CODEX_SERVERS}${CODEX_SEP}{\"name\":\"language-server-kotlin\",\"command\":\"$LSP_MCP_BIN\",\"args\":[\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_KOTLIN_BIN\"],\"env\":{\"LOG_LEVEL\":\"INFO\"}}"
+        MCP_SEP=","
+        CODEX_SEP=","
+    fi
+
+    if [ "$HAS_SCALA" -eq 1 ] && [ -n "$LSP_METALS_BIN" ]; then
+        MCP_ENTRIES="${MCP_ENTRIES}${MCP_SEP}
+    \"language-server-scala\": {
+      \"command\": \"$LSP_MCP_BIN\",
+      \"args\": [\"-workspace\", \"$REPO_ROOT\", \"-lsp\", \"$LSP_METALS_BIN\"],
+      \"env\": { \"LOG_LEVEL\": \"INFO\" }
+    }"
+        CODEX_SERVERS="${CODEX_SERVERS}${CODEX_SEP}{\"name\":\"language-server-scala\",\"command\":\"$LSP_MCP_BIN\",\"args\":[\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_METALS_BIN\"],\"env\":{\"LOG_LEVEL\":\"INFO\"}}"
+        MCP_SEP=","
+        CODEX_SEP=","
+    fi
+
     if [ "$CODEX" -eq 1 ] && [ -n "$LSP_CODEX_BIN" ]; then
         MCP_ENTRIES="${MCP_ENTRIES}${MCP_SEP}
     \"codex\": {
@@ -536,6 +594,10 @@ echo "  ./start-lsp.sh            # verify prereqs (bridge stub)"
     echo "  rust-analyzer missing     # run: rustup component add rust-analyzer, then re-run"
 [ "$HAS_GO" -eq 1 ] && [ -z "$LSP_GOPLS_BIN" ] && \
     echo "  gopls missing             # run: go install golang.org/x/tools/gopls@latest, then re-run"
+[ "$HAS_KOTLIN" -eq 1 ] && [ -z "$LSP_KOTLIN_BIN" ] && \
+    echo "  kotlin-language-server missing  # see https://github.com/fwcd/kotlin-language-server/releases"
+[ "$HAS_SCALA" -eq 1 ] && [ -z "$LSP_METALS_BIN" ] && \
+    echo "  metals missing            # see https://scalameta.org/metals/docs/editors/vim#installation"
 echo ""
 echo "To regenerate (e.g. after switching Python environments):"
 echo "  ./generate-env-lsp.sh"

@@ -8,7 +8,7 @@ A single-file bootstrap kit that drops LSP (Language Server Protocol) tooling in
 
 `generate-env-lsp.sh` is the entry point. Drop it into any project directory (e.g. `~/workspace/my-project/`) and run it once. It will:
 
-1. Resolve absolute paths to `python`, `pyright-langserver`, `typescript-language-server`, `rust-analyzer`, `gopls`, and `mcp-language-server`
+1. Resolve absolute paths to `python`, `pyright-langserver`, `typescript-language-server`, `rust-analyzer`, `gopls`, `kotlin-language-server`, `metals`, and `mcp-language-server`
 2. Write **`env.lsp`** — a machine-specific env file (gitignored)
 3. Write **`start-lsp.sh`**, **`stop-lsp.sh`**, **`check-types.sh`** (skip if already present)
 4. Scaffold **`pyrightconfig.json`** for Python projects (if missing)
@@ -41,6 +41,15 @@ rustup component add rust-analyzer
 # Go LSP (optional — needed for Go projects)
 go install golang.org/x/tools/gopls@latest
 
+# Kotlin LSP (optional — needed for Kotlin projects)
+# Download kotlin-language-server from:
+# https://github.com/fwcd/kotlin-language-server/releases
+# Extract and place the `kotlin-language-server` binary on your PATH.
+
+# Scala LSP (optional — needed for Scala projects)
+# Install Metals via Coursier:
+cs install metals
+
 # MCP bridge (optional — enables .mcp.json and ~/.codex/config.toml generation)
 # Option A: go install (requires Go 1.21+)
 go install github.com/isaacs/mcp-language-server@latest
@@ -63,6 +72,8 @@ which pyright-langserver
 which typescript-language-server
 which rust-analyzer          # optional
 which gopls                  # optional
+which kotlin-language-server # optional
+which metals                 # optional
 which mcp-language-server    # optional
 which codex                  # optional, for --codex flag
 ```
@@ -130,7 +141,7 @@ LSP_PORT=7891
 
 Wires `mcp-language-server` into Claude Code. Contains absolute paths, so it is gitignored. **Restart Claude Code after this file is written** for it to take effect.
 
-One entry is generated per detected language. Example for a Python + Rust + Go project:
+One entry is generated per detected language. Example for a Python + Go + Scala project:
 ```json
 {
   "mcpServers": {
@@ -139,28 +150,30 @@ One entry is generated per detected language. Example for a Python + Rust + Go p
       "args": ["-workspace", "/path/to/project", "-lsp", "/path/to/pyright-langserver", "--", "--stdio"],
       "env": { "LOG_LEVEL": "INFO" }
     },
-    "language-server-rust": {
-      "command": "/path/to/mcp-language-server",
-      "args": ["-workspace", "/path/to/project", "-lsp", "/path/to/rust-analyzer"],
-      "env": { "LOG_LEVEL": "INFO" }
-    },
     "language-server-go": {
       "command": "/path/to/mcp-language-server",
       "args": ["-workspace", "/path/to/project", "-lsp", "/path/to/gopls"],
+      "env": { "LOG_LEVEL": "INFO" }
+    },
+    "language-server-scala": {
+      "command": "/path/to/mcp-language-server",
+      "args": ["-workspace", "/path/to/project", "-lsp", "/path/to/metals"],
       "env": { "LOG_LEVEL": "INFO" }
     }
   }
 }
 ```
 
-| Language | Detection | LSP binary |
-|---|---|---|
-| Python | `setup.py`, `pyproject.toml`, `requirements.txt`, common dirs | `pyright-langserver` |
-| JavaScript/TypeScript | `package.json`, `jsconfig.json` | `typescript-language-server` |
-| Rust | `Cargo.toml` | `rust-analyzer` |
-| Go | `go.mod` | `gopls` |
+| Language | Detection | LSP binary | Install |
+|---|---|---|---|
+| Python | `setup.py`, `pyproject.toml`, `requirements.txt`, common dirs | `pyright-langserver` | `npm i -g pyright` |
+| JavaScript/TypeScript | `package.json`, `jsconfig.json` | `typescript-language-server` | `npm i -g typescript-language-server` |
+| Rust | `Cargo.toml` | `rust-analyzer` | `rustup component add rust-analyzer` |
+| Go | `go.mod` | `gopls` | `go install golang.org/x/tools/gopls@latest` |
+| Kotlin | `build.gradle.kts`, `settings.gradle.kts`, `*.kt` | `kotlin-language-server` | [GitHub releases](https://github.com/fwcd/kotlin-language-server/releases) |
+| Scala | `build.sbt`, `*.scala` | `metals` | `cs install metals` |
 
-Mixed projects get all relevant entries. No extra config file is needed for Rust or Go — `rust-analyzer` reads `Cargo.toml` and `gopls` reads `go.mod` natively.
+Mixed projects get all relevant entries. LSP servers read their native build files (`Cargo.toml`, `go.mod`, `build.sbt`, etc.) directly — no extra config needed.
 
 When `--codex` is passed and the `codex` binary is found, an additional entry is added to `.mcp.json` only (not to `~/.codex/config.toml` — Codex does not need itself as a server):
 
@@ -287,6 +300,8 @@ The generator auto-detects project types:
 - **JavaScript/TypeScript** — `package.json` or `jsconfig.json`
 - **Rust** — `Cargo.toml`
 - **Go** — `go.mod`
+- **Kotlin** — `build.gradle.kts`, `settings.gradle.kts`, or any `*.kt` file (up to 3 dirs deep)
+- **Scala** — `build.sbt` or any `*.scala` file (up to 3 dirs deep)
 
 ---
 
