@@ -374,6 +374,9 @@ if [ -n "$LSP_MCP_BIN" ]; then
     # Build mcpServers entries for each detected language
     MCP_ENTRIES=""
     MCP_SEP=""
+    # Parallel JSON array for ~/.codex/config.toml (same servers, different format)
+    CODEX_SERVERS="["
+    CODEX_SEP=""
 
     if [ "$HAS_PYTHON" -eq 1 ]; then
         MCP_ENTRIES="${MCP_ENTRIES}${MCP_SEP}
@@ -382,7 +385,9 @@ if [ -n "$LSP_MCP_BIN" ]; then
       \"args\": [\"-workspace\", \"$REPO_ROOT\", \"-lsp\", \"$LSP_PYRIGHT_BIN\", \"--\", \"--stdio\"],
       \"env\": { \"LOG_LEVEL\": \"INFO\" }
     }"
+        CODEX_SERVERS="${CODEX_SERVERS}${CODEX_SEP}{\"name\":\"language-server-python\",\"command\":\"$LSP_MCP_BIN\",\"args\":[\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_PYRIGHT_BIN\",\"--\",\"--stdio\"],\"env\":{\"LOG_LEVEL\":\"INFO\"}}"
         MCP_SEP=","
+        CODEX_SEP=","
     fi
 
     if [ "$HAS_JS" -eq 1 ]; then
@@ -392,7 +397,9 @@ if [ -n "$LSP_MCP_BIN" ]; then
       \"args\": [\"-workspace\", \"$REPO_ROOT\", \"-lsp\", \"$LSP_TSS_BIN\", \"--\", \"--stdio\"],
       \"env\": { \"LOG_LEVEL\": \"INFO\" }
     }"
+        CODEX_SERVERS="${CODEX_SERVERS}${CODEX_SEP}{\"name\":\"language-server-js\",\"command\":\"$LSP_MCP_BIN\",\"args\":[\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_TSS_BIN\",\"--\",\"--stdio\"],\"env\":{\"LOG_LEVEL\":\"INFO\"}}"
         MCP_SEP=","
+        CODEX_SEP=","
     fi
 
     if [ "$HAS_RUST" -eq 1 ] && [ -n "$LSP_RUST_BIN" ]; then
@@ -402,7 +409,9 @@ if [ -n "$LSP_MCP_BIN" ]; then
       \"args\": [\"-workspace\", \"$REPO_ROOT\", \"-lsp\", \"$LSP_RUST_BIN\"],
       \"env\": { \"LOG_LEVEL\": \"INFO\" }
     }"
+        CODEX_SERVERS="${CODEX_SERVERS}${CODEX_SEP}{\"name\":\"language-server-rust\",\"command\":\"$LSP_MCP_BIN\",\"args\":[\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_RUST_BIN\"],\"env\":{\"LOG_LEVEL\":\"INFO\"}}"
         MCP_SEP=","
+        CODEX_SEP=","
     fi
 
     if [ "$CODEX" -eq 1 ] && [ -n "$LSP_CODEX_BIN" ]; then
@@ -415,6 +424,8 @@ if [ -n "$LSP_MCP_BIN" ]; then
         MCP_SEP=","
     fi
 
+    CODEX_SERVERS="${CODEX_SERVERS}]"
+
     # Fallback: if no language detected, wire pyright as default
     if [ -z "$MCP_ENTRIES" ]; then
         MCP_ENTRIES="
@@ -423,6 +434,7 @@ if [ -n "$LSP_MCP_BIN" ]; then
       \"args\": [\"-workspace\", \"$REPO_ROOT\", \"-lsp\", \"$LSP_PYRIGHT_BIN\", \"--\", \"--stdio\"],
       \"env\": { \"LOG_LEVEL\": \"INFO\" }
     }"
+        CODEX_SERVERS="[{\"name\":\"language-server\",\"command\":\"$LSP_MCP_BIN\",\"args\":[\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_PYRIGHT_BIN\",\"--\",\"--stdio\"],\"env\":{\"LOG_LEVEL\":\"INFO\"}}]"
     fi
 
     if [ -f "$REPO_ROOT/.mcp.json" ] && [ "$FORCE" -eq 0 ]; then
@@ -434,6 +446,51 @@ if [ -n "$LSP_MCP_BIN" ]; then
 
     # .mcp.json contains machine-specific absolute paths — gitignore it
     gitignore_add ".mcp.json"
+fi
+
+# ── 10. update ~/.codex/config.toml ───────────────────────────────────────
+
+if [ -n "$LSP_MCP_BIN" ] && [ -n "$CODEX_SERVERS" ] && [ "$CODEX_SERVERS" != "[]" ]; then
+    echo ""
+    echo "Updating ~/.codex/config.toml..."
+
+    python3 - "$CODEX_SERVERS" "$FORCE" << 'PYEOF'
+import sys, json, os
+
+servers = json.loads(sys.argv[1])
+force   = sys.argv[2] == "1"
+
+config_path = os.path.expanduser("~/.codex/config.toml")
+os.makedirs(os.path.dirname(config_path), exist_ok=True)
+
+content = open(config_path).read() if os.path.exists(config_path) else ""
+
+added = []
+for s in servers:
+    section = f'[mcp_servers.{s["name"]}]'
+    if section in content and not force:
+        print(f"  skip   {section} (already exists; --force to overwrite)")
+        continue
+    if section in content and force:
+        # Remove existing block before re-appending
+        import re
+        content = re.sub(
+            rf'\n?{re.escape(section)}[^\[]*', '', content, count=1
+        ).rstrip() + "\n"
+
+    args_toml = json.dumps(s["args"])
+    env_pairs = ", ".join(f'"{k}" = "{v}"' for k, v in s.get("env", {}).items())
+    env_line  = f"\nenv = {{{env_pairs}}}" if env_pairs else ""
+    block = f'\n[mcp_servers.{s["name"]}]\ncommand = "{s["command"]}"\ntransport = "stdio"\nargs = {args_toml}{env_line}\n'
+    content += block
+    added.append(s["name"])
+
+if added:
+    with open(config_path, "w") as f:
+        f.write(content)
+    for name in added:
+        print(f"  wrote  ~/.codex/config.toml ← [mcp_servers.{name}]")
+PYEOF
 fi
 
 # ── done ──────────────────────────────────────────────────────────────────
