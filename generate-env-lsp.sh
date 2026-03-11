@@ -117,6 +117,46 @@ else
     ok "metals → $LSP_METALS_BIN"
 fi
 
+# taplo (TOML) is optional — warn but don't fail
+LSP_TAPLO_BIN="$(which taplo 2>/dev/null || true)"
+if [ -z "$LSP_TAPLO_BIN" ]; then
+    printf "  \033[33mwarn\033[0m   taplo not found (TOML LSP will be skipped)\n"
+    printf "         Install: cargo install taplo-cli\n"
+else
+    ok "taplo → $LSP_TAPLO_BIN"
+fi
+
+# vscode-json-language-server is optional — warn but don't fail
+LSP_JSON_BIN="$(which vscode-json-language-server 2>/dev/null || true)"
+LSP_HTML_BIN="$(which vscode-html-language-server 2>/dev/null || true)"
+LSP_CSS_BIN="$(which vscode-css-language-server 2>/dev/null || true)"
+if [ -z "$LSP_JSON_BIN" ]; then
+    printf "  \033[33mwarn\033[0m   vscode-json-language-server not found (JSON/HTML/CSS LSP will be skipped)\n"
+    printf "         Install: npm install -g vscode-langservers-extracted\n"
+else
+    ok "vscode-json-language-server → $LSP_JSON_BIN"
+    [ -n "$LSP_HTML_BIN" ] && ok "vscode-html-language-server → $LSP_HTML_BIN"
+    [ -n "$LSP_CSS_BIN"  ] && ok "vscode-css-language-server → $LSP_CSS_BIN"
+fi
+
+# bash-language-server is optional — warn but don't fail
+LSP_BASH_BIN="$(which bash-language-server 2>/dev/null || true)"
+if [ -z "$LSP_BASH_BIN" ]; then
+    printf "  \033[33mwarn\033[0m   bash-language-server not found (Shell LSP will be skipped)\n"
+    printf "         Install: npm install -g bash-language-server\n"
+else
+    ok "bash-language-server → $LSP_BASH_BIN"
+fi
+
+# yaml-language-server is optional — warn but don't fail
+LSP_YAML_BIN="$(which yaml-language-server 2>/dev/null || true)"
+if [ -z "$LSP_YAML_BIN" ]; then
+    printf "  \033[33mwarn\033[0m   yaml-language-server not found (YAML LSP will be skipped)\n"
+    printf "         Install: npm install -g yaml-language-server\n"
+else
+    ok "yaml-language-server → $LSP_YAML_BIN"
+fi
+
 # mcp-language-server is optional — warn but don't fail
 LSP_MCP_BIN="$(which mcp-language-server 2>/dev/null || true)"
 if [ -z "$LSP_MCP_BIN" ]; then
@@ -182,13 +222,54 @@ elif find "$REPO_ROOT" -maxdepth 3 -name "*.scala" -print -quit 2>/dev/null | gr
     HAS_SCALA=1
 fi
 
+HAS_SHELL=0
+if find "$REPO_ROOT" -maxdepth 3 -name "*.sh" -print -quit 2>/dev/null | grep -q .; then
+    HAS_SHELL=1
+elif [ -f "$REPO_ROOT/Makefile" ] || [ -f "$REPO_ROOT/Dockerfile" ]; then
+    HAS_SHELL=1
+fi
+
+HAS_YAML=0
+if find "$REPO_ROOT" -maxdepth 3 \( -name "*.yml" -o -name "*.yaml" \) -print -quit 2>/dev/null | grep -q .; then
+    HAS_YAML=1
+fi
+
+HAS_TOML=0
+if find "$REPO_ROOT" -maxdepth 3 -name "*.toml" -print -quit 2>/dev/null | grep -q .; then
+    HAS_TOML=1
+fi
+
+HAS_JSON=0
+if find "$REPO_ROOT" -maxdepth 2 -name "*.json" -not -path "*/node_modules/*" -print -quit 2>/dev/null | grep -q .; then
+    HAS_JSON=1
+fi
+
+HAS_HTML=0
+if find "$REPO_ROOT" -maxdepth 3 -name "*.html" -not -path "*/node_modules/*" -print -quit 2>/dev/null | grep -q .; then
+    HAS_HTML=1
+fi
+
+HAS_CSS=0
+if find "$REPO_ROOT" -maxdepth 3 \( -name "*.css" -o -name "*.scss" -o -name "*.less" \) -not -path "*/node_modules/*" -print -quit 2>/dev/null | grep -q .; then
+    HAS_CSS=1
+fi
+
 [ "$HAS_PYTHON" -eq 1 ] && ok "Python project detected"
 [ "$HAS_JS" -eq 1 ]     && ok "JavaScript project detected"
 [ "$HAS_RUST" -eq 1 ]   && ok "Rust project detected"
 [ "$HAS_GO" -eq 1 ]     && ok "Go project detected"
 [ "$HAS_KOTLIN" -eq 1 ] && ok "Kotlin project detected"
 [ "$HAS_SCALA" -eq 1 ]  && ok "Scala project detected"
-[ "$HAS_PYTHON" -eq 0 ] && [ "$HAS_JS" -eq 0 ] && [ "$HAS_RUST" -eq 0 ] && [ "$HAS_GO" -eq 0 ] && [ "$HAS_KOTLIN" -eq 0 ] && [ "$HAS_SCALA" -eq 0 ] && ok "No specific project type detected (generic)"
+[ "$HAS_SHELL" -eq 1 ]  && ok "Shell scripts detected"
+[ "$HAS_YAML" -eq 1 ]   && ok "YAML files detected"
+[ "$HAS_TOML" -eq 1 ]   && ok "TOML files detected"
+[ "$HAS_JSON" -eq 1 ]   && ok "JSON files detected"
+[ "$HAS_HTML" -eq 1 ]   && ok "HTML files detected"
+[ "$HAS_CSS" -eq 1 ]    && ok "CSS/SCSS files detected"
+[ "$HAS_PYTHON" -eq 0 ] && [ "$HAS_JS" -eq 0 ] && [ "$HAS_RUST" -eq 0 ] && [ "$HAS_GO" -eq 0 ] && \
+[ "$HAS_KOTLIN" -eq 0 ] && [ "$HAS_SCALA" -eq 0 ] && [ "$HAS_SHELL" -eq 0 ] && [ "$HAS_YAML" -eq 0 ] && \
+[ "$HAS_TOML" -eq 0 ] && [ "$HAS_JSON" -eq 0 ] && [ "$HAS_HTML" -eq 0 ] && [ "$HAS_CSS" -eq 0 ] && \
+ok "No specific project type detected (generic)"
 
 # ── 3. write env.lsp ──────────────────────────────────────────────────────
 
@@ -497,6 +578,78 @@ if [ -n "$LSP_MCP_BIN" ]; then
         CODEX_SEP=","
     fi
 
+    if [ "$HAS_TOML" -eq 1 ] && [ -n "$LSP_TAPLO_BIN" ]; then
+        MCP_ENTRIES="${MCP_ENTRIES}${MCP_SEP}
+    \"language-server-toml\": {
+      \"command\": \"$LSP_MCP_BIN\",
+      \"args\": [\"-workspace\", \"$REPO_ROOT\", \"-lsp\", \"$LSP_TAPLO_BIN\", \"--\", \"lsp\", \"stdio\"],
+      \"env\": { \"LOG_LEVEL\": \"INFO\" }
+    }"
+        CODEX_SERVERS="${CODEX_SERVERS}${CODEX_SEP}{\"name\":\"language-server-toml\",\"command\":\"$LSP_MCP_BIN\",\"args\":[\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_TAPLO_BIN\",\"--\",\"lsp\",\"stdio\"],\"env\":{\"LOG_LEVEL\":\"INFO\"}}"
+        MCP_SEP=","
+        CODEX_SEP=","
+    fi
+
+    if [ "$HAS_JSON" -eq 1 ] && [ -n "$LSP_JSON_BIN" ]; then
+        MCP_ENTRIES="${MCP_ENTRIES}${MCP_SEP}
+    \"language-server-json\": {
+      \"command\": \"$LSP_MCP_BIN\",
+      \"args\": [\"-workspace\", \"$REPO_ROOT\", \"-lsp\", \"$LSP_JSON_BIN\", \"--\", \"--stdio\"],
+      \"env\": { \"LOG_LEVEL\": \"INFO\" }
+    }"
+        CODEX_SERVERS="${CODEX_SERVERS}${CODEX_SEP}{\"name\":\"language-server-json\",\"command\":\"$LSP_MCP_BIN\",\"args\":[\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_JSON_BIN\",\"--\",\"--stdio\"],\"env\":{\"LOG_LEVEL\":\"INFO\"}}"
+        MCP_SEP=","
+        CODEX_SEP=","
+    fi
+
+    if [ "$HAS_HTML" -eq 1 ] && [ -n "$LSP_HTML_BIN" ]; then
+        MCP_ENTRIES="${MCP_ENTRIES}${MCP_SEP}
+    \"language-server-html\": {
+      \"command\": \"$LSP_MCP_BIN\",
+      \"args\": [\"-workspace\", \"$REPO_ROOT\", \"-lsp\", \"$LSP_HTML_BIN\", \"--\", \"--stdio\"],
+      \"env\": { \"LOG_LEVEL\": \"INFO\" }
+    }"
+        CODEX_SERVERS="${CODEX_SERVERS}${CODEX_SEP}{\"name\":\"language-server-html\",\"command\":\"$LSP_MCP_BIN\",\"args\":[\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_HTML_BIN\",\"--\",\"--stdio\"],\"env\":{\"LOG_LEVEL\":\"INFO\"}}"
+        MCP_SEP=","
+        CODEX_SEP=","
+    fi
+
+    if [ "$HAS_CSS" -eq 1 ] && [ -n "$LSP_CSS_BIN" ]; then
+        MCP_ENTRIES="${MCP_ENTRIES}${MCP_SEP}
+    \"language-server-css\": {
+      \"command\": \"$LSP_MCP_BIN\",
+      \"args\": [\"-workspace\", \"$REPO_ROOT\", \"-lsp\", \"$LSP_CSS_BIN\", \"--\", \"--stdio\"],
+      \"env\": { \"LOG_LEVEL\": \"INFO\" }
+    }"
+        CODEX_SERVERS="${CODEX_SERVERS}${CODEX_SEP}{\"name\":\"language-server-css\",\"command\":\"$LSP_MCP_BIN\",\"args\":[\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_CSS_BIN\",\"--\",\"--stdio\"],\"env\":{\"LOG_LEVEL\":\"INFO\"}}"
+        MCP_SEP=","
+        CODEX_SEP=","
+    fi
+
+    if [ "$HAS_SHELL" -eq 1 ] && [ -n "$LSP_BASH_BIN" ]; then
+        MCP_ENTRIES="${MCP_ENTRIES}${MCP_SEP}
+    \"language-server-shell\": {
+      \"command\": \"$LSP_MCP_BIN\",
+      \"args\": [\"-workspace\", \"$REPO_ROOT\", \"-lsp\", \"$LSP_BASH_BIN\", \"--\", \"--stdio\"],
+      \"env\": { \"LOG_LEVEL\": \"INFO\" }
+    }"
+        CODEX_SERVERS="${CODEX_SERVERS}${CODEX_SEP}{\"name\":\"language-server-shell\",\"command\":\"$LSP_MCP_BIN\",\"args\":[\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_BASH_BIN\",\"--\",\"--stdio\"],\"env\":{\"LOG_LEVEL\":\"INFO\"}}"
+        MCP_SEP=","
+        CODEX_SEP=","
+    fi
+
+    if [ "$HAS_YAML" -eq 1 ] && [ -n "$LSP_YAML_BIN" ]; then
+        MCP_ENTRIES="${MCP_ENTRIES}${MCP_SEP}
+    \"language-server-yaml\": {
+      \"command\": \"$LSP_MCP_BIN\",
+      \"args\": [\"-workspace\", \"$REPO_ROOT\", \"-lsp\", \"$LSP_YAML_BIN\", \"--\", \"--stdio\"],
+      \"env\": { \"LOG_LEVEL\": \"INFO\" }
+    }"
+        CODEX_SERVERS="${CODEX_SERVERS}${CODEX_SEP}{\"name\":\"language-server-yaml\",\"command\":\"$LSP_MCP_BIN\",\"args\":[\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_YAML_BIN\",\"--\",\"--stdio\"],\"env\":{\"LOG_LEVEL\":\"INFO\"}}"
+        MCP_SEP=","
+        CODEX_SEP=","
+    fi
+
     if [ "$CODEX" -eq 1 ] && [ -n "$LSP_CODEX_BIN" ]; then
         MCP_ENTRIES="${MCP_ENTRIES}${MCP_SEP}
     \"codex\": {
@@ -598,6 +751,14 @@ echo "  ./start-lsp.sh            # verify prereqs (bridge stub)"
     echo "  kotlin-language-server missing  # see https://github.com/fwcd/kotlin-language-server/releases"
 [ "$HAS_SCALA" -eq 1 ] && [ -z "$LSP_METALS_BIN" ] && \
     echo "  metals missing            # see https://scalameta.org/metals/docs/editors/vim#installation"
+[ "$HAS_SHELL" -eq 1 ] && [ -z "$LSP_BASH_BIN" ] && \
+    echo "  bash-language-server missing  # run: npm install -g bash-language-server, then re-run"
+[ "$HAS_YAML" -eq 1 ] && [ -z "$LSP_YAML_BIN" ] && \
+    echo "  yaml-language-server missing  # run: npm install -g yaml-language-server, then re-run"
+[ "$HAS_TOML" -eq 1 ] && [ -z "$LSP_TAPLO_BIN" ] && \
+    echo "  taplo missing                 # run: cargo install taplo-cli, then re-run"
+{ [ "$HAS_JSON" -eq 1 ] || [ "$HAS_HTML" -eq 1 ] || [ "$HAS_CSS" -eq 1 ]; } && [ -z "$LSP_JSON_BIN" ] && \
+    echo "  vscode-langservers missing    # run: npm install -g vscode-langservers-extracted, then re-run"
 echo ""
 echo "To regenerate (e.g. after switching Python environments):"
 echo "  ./generate-env-lsp.sh"

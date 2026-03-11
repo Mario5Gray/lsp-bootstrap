@@ -15,7 +15,7 @@ Two scripts cover all supported languages:
 
 `generate-env-lsp.sh` is the main entry point. Drop it into any project directory (e.g. `~/workspace/my-project/`) and run it once. It will:
 
-1. Resolve absolute paths to `python`, `pyright-langserver`, `typescript-language-server`, `rust-analyzer`, `gopls`, `kotlin-language-server`, `metals`, and `mcp-language-server`
+1. Resolve absolute paths to all supported language server binaries and `mcp-language-server`
 2. Write **`env.lsp`** — a machine-specific env file (gitignored)
 3. Write **`start-lsp.sh`**, **`stop-lsp.sh`**, **`check-types.sh`** (skip if already present)
 4. Scaffold **`pyrightconfig.json`** for Python projects (if missing)
@@ -57,6 +57,18 @@ go install golang.org/x/tools/gopls@latest
 # Install Metals via Coursier:
 cs install metals
 
+# Shell LSP (optional — needed for .sh files)
+npm install -g bash-language-server
+
+# YAML LSP (optional — needed for .yml/.yaml files)
+npm install -g yaml-language-server
+
+# TOML LSP (optional — needed for .toml files)
+cargo install taplo-cli
+
+# JSON, HTML, CSS LSP (optional — one install covers all three)
+npm install -g vscode-langservers-extracted
+
 # MCP bridge (optional — enables .mcp.json and ~/.codex/config.toml generation)
 # Option A: go install (requires Go 1.21+)
 go install github.com/isaacs/mcp-language-server@latest
@@ -81,7 +93,11 @@ which rust-analyzer          # optional
 which gopls                  # optional
 which kotlin-language-server # optional
 which metals                 # optional
-which mcp-language-server    # optional
+which bash-language-server        # optional
+which yaml-language-server        # optional
+which taplo                       # optional
+which vscode-json-language-server # optional (also installs html + css servers)
+which mcp-language-server         # optional
 which codex                  # optional, for --codex flag
 ```
 
@@ -179,6 +195,12 @@ One entry is generated per detected language. Example for a Python + Go + Scala 
 | Go | `go.mod` | `gopls` | `go install golang.org/x/tools/gopls@latest` |
 | Kotlin | `build.gradle.kts`, `settings.gradle.kts`, `*.kt` | `kotlin-language-server` | [GitHub releases](https://github.com/fwcd/kotlin-language-server/releases) |
 | Scala | `build.sbt`, `*.scala` | `metals` | `cs install metals` |
+| Shell | `*.sh`, `Makefile`, `Dockerfile` | `bash-language-server` | `npm i -g bash-language-server` |
+| YAML | `*.yml`, `*.yaml` | `yaml-language-server` | `npm i -g yaml-language-server` |
+| TOML | `*.toml` | `taplo` | `cargo install taplo-cli` |
+| JSON | `*.json` (excl. node_modules) | `vscode-json-language-server` | `npm i -g vscode-langservers-extracted` |
+| HTML | `*.html` (excl. node_modules) | `vscode-html-language-server` | same `vscode-langservers-extracted` |
+| CSS/SCSS/Less | `*.css`, `*.scss`, `*.less` | `vscode-css-language-server` | same `vscode-langservers-extracted` |
 
 Mixed projects get all relevant entries. LSP servers read their native build files (`Cargo.toml`, `go.mod`, `build.sbt`, etc.) directly — no extra config needed.
 
@@ -367,6 +389,12 @@ The generator auto-detects project types:
 - **Go** — `go.mod`
 - **Kotlin** — `build.gradle.kts`, `settings.gradle.kts`, or any `*.kt` file (up to 3 dirs deep)
 - **Scala** — `build.sbt` or any `*.scala` file (up to 3 dirs deep)
+- **Shell** — any `*.sh` file (up to 3 dirs deep), or `Makefile` / `Dockerfile` at repo root
+- **YAML** — any `*.yml` or `*.yaml` file (up to 3 dirs deep)
+- **TOML** — any `*.toml` file (up to 3 dirs deep)
+- **JSON** — any `*.json` file (up to 2 dirs deep, excluding `node_modules`)
+- **HTML** — any `*.html` file (up to 3 dirs deep, excluding `node_modules`)
+- **CSS** — any `*.css`, `*.scss`, or `*.less` file (up to 3 dirs deep, excluding `node_modules`)
 
 ---
 
