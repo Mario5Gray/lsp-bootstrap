@@ -14,7 +14,11 @@
 set -euo pipefail
 
 FORCE=0
-for arg in "$@"; do [ "$arg" = "--force" ] && FORCE=1; done
+CODEX=0
+for arg in "$@"; do
+    [ "$arg" = "--force" ] && FORCE=1
+    [ "$arg" = "--codex" ] && CODEX=1
+done
 
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$REPO_ROOT"
@@ -93,6 +97,18 @@ if [ -z "$LSP_MCP_BIN" ]; then
     printf "         Install: go install github.com/isaacs/mcp-language-server@latest\n"
 else
     ok "mcp-language-server → $LSP_MCP_BIN"
+fi
+
+# codex is optional — only checked when --codex passed
+LSP_CODEX_BIN=""
+if [ "$CODEX" -eq 1 ]; then
+    LSP_CODEX_BIN="$(which codex 2>/dev/null || true)"
+    if [ -z "$LSP_CODEX_BIN" ]; then
+        printf "  \033[33mwarn\033[0m   codex not found (Codex MCP will be skipped)\n"
+        printf "         Install: npm install -g @openai/codex\n"
+    else
+        ok "codex → $LSP_CODEX_BIN"
+    fi
 fi
 
 if [ "$fail" -ne 0 ]; then
@@ -389,6 +405,16 @@ if [ -n "$LSP_MCP_BIN" ]; then
         MCP_SEP=","
     fi
 
+    if [ "$CODEX" -eq 1 ] && [ -n "$LSP_CODEX_BIN" ]; then
+        MCP_ENTRIES="${MCP_ENTRIES}${MCP_SEP}
+    \"codex\": {
+      \"command\": \"$LSP_CODEX_BIN\",
+      \"args\": [\"--mcp-server\"],
+      \"env\": {}
+    }"
+        MCP_SEP=","
+    fi
+
     # Fallback: if no language detected, wire pyright as default
     if [ -z "$MCP_ENTRIES" ]; then
         MCP_ENTRIES="
@@ -418,6 +444,10 @@ echo "  ./check-types.sh          # run pyright now"
 echo "  ./start-lsp.sh            # verify prereqs (bridge stub)"
 [ -n "$LSP_MCP_BIN" ] && \
     echo "  .mcp.json written         # restart Claude Code to pick up the MCP server(s)"
+[ "$CODEX" -eq 1 ] && [ -n "$LSP_CODEX_BIN" ] && \
+    echo "  codex MCP added           # Codex AI coding agent available via .mcp.json"
+[ "$CODEX" -eq 1 ] && [ -z "$LSP_CODEX_BIN" ] && \
+    echo "  codex missing             # run: npm install -g @openai/codex, then re-run with --codex"
 [ "$HAS_PYTHON" -eq 1 ] && [ "$FORCE" -eq 0 ] && \
     echo "  Review pyrightconfig.json — adjust 'include'/'exclude' for this project"
 [ "$HAS_RUST" -eq 1 ] && [ -z "$LSP_RUST_BIN" ] && \
