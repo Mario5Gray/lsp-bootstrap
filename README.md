@@ -1,12 +1,19 @@
 # lsp-bootstrap
 
-A single-file bootstrap kit that drops LSP (Language Server Protocol) tooling into any repo. Copy one script, run it, and get type-checking, go-to-definition, and MCP-wired language intelligence in Claude Code and Codex — all with machine-specific paths baked in and gitignored.
+A bootstrap kit that drops LSP (Language Server Protocol) tooling into any repo. Copy one script, run it, and get type-checking, go-to-definition, and MCP-wired language intelligence in Claude Code and Codex — all with machine-specific paths baked in and gitignored.
 
 ---
 
 ## Overview
 
-`generate-env-lsp.sh` is the entry point. Drop it into any project directory (e.g. `~/workspace/my-project/`) and run it once. It will:
+Two scripts cover all supported languages:
+
+| Script | Languages |
+|---|---|
+| `generate-env-lsp.sh` | Python, JavaScript/TypeScript, Rust, Go, Kotlin, Scala |
+| `generate-java-lsp.sh` | Java (jdtls requires a generated wrapper — see [Java](#java)) |
+
+`generate-env-lsp.sh` is the main entry point. Drop it into any project directory (e.g. `~/workspace/my-project/`) and run it once. It will:
 
 1. Resolve absolute paths to `python`, `pyright-langserver`, `typescript-language-server`, `rust-analyzer`, `gopls`, `kotlin-language-server`, `metals`, and `mcp-language-server`
 2. Write **`env.lsp`** — a machine-specific env file (gitignored)
@@ -174,6 +181,46 @@ One entry is generated per detected language. Example for a Python + Go + Scala 
 | Scala | `build.sbt`, `*.scala` | `metals` | `cs install metals` |
 
 Mixed projects get all relevant entries. LSP servers read their native build files (`Cargo.toml`, `go.mod`, `build.sbt`, etc.) directly — no extra config needed.
+
+---
+
+## Java
+
+Java uses `jdtls` (Eclipse JDT Language Server), which cannot be wired directly — it requires JVM flags, a launcher JAR, an OS-specific config directory, and a per-workspace data directory. A separate script handles this.
+
+### Why a separate script
+
+`mcp-language-server` takes a single `-lsp <binary>` argument. `jdtls` is a JAR invoked with ~10 JVM flags. The solution is a generated `jdtls-wrapper.sh` with all paths baked in, which `mcp-language-server` then treats as a plain binary.
+
+### Setup
+
+```bash
+# 1. Install JDK 17+ if needed
+#    macOS:  brew install temurin   (or adoptium.net)
+#    Linux:  apt install openjdk-21-jdk
+
+# 2. Install jdtls
+#    macOS:  brew install jdtls
+#    Linux:  download from https://www.eclipse.org/jdtls/ and extract to ~/.local/share/jdtls
+
+# 3. Run the generator
+./generate-java-lsp.sh
+```
+
+If jdtls is installed in a non-standard location, set `JDTLS_HOME_OVERRIDE`:
+
+```bash
+JDTLS_HOME_OVERRIDE=/path/to/jdtls ./generate-java-lsp.sh
+```
+
+### What it generates
+
+| File | Purpose | Committed? |
+|---|---|---|
+| `jdtls-wrapper.sh` | Invokes jdtls with baked-in JVM flags and paths | No (gitignored) |
+| `.jdtls-data/` | Per-workspace index written by jdtls at runtime | No (gitignored) |
+
+The wrapper is injected into `.mcp.json` and `~/.codex/config.toml` alongside any entries already written by `generate-env-lsp.sh`. Re-run with `--force` after upgrading jdtls or Java.
 
 When `--codex` is passed and the `codex` binary is found, an additional entry is added to `.mcp.json` only (not to `~/.codex/config.toml` — Codex does not need itself as a server):
 
