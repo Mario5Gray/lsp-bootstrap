@@ -90,6 +90,15 @@ else
     ok "rust-analyzer → $LSP_RUST_BIN"
 fi
 
+# gopls is optional — warn but don't fail
+LSP_GOPLS_BIN="$(which gopls 2>/dev/null || true)"
+if [ -z "$LSP_GOPLS_BIN" ]; then
+    printf "  \033[33mwarn\033[0m   gopls not found (Go LSP will be skipped)\n"
+    printf "         Install: go install golang.org/x/tools/gopls@latest\n"
+else
+    ok "gopls → $LSP_GOPLS_BIN"
+fi
+
 # mcp-language-server is optional — warn but don't fail
 LSP_MCP_BIN="$(which mcp-language-server 2>/dev/null || true)"
 if [ -z "$LSP_MCP_BIN" ]; then
@@ -138,10 +147,14 @@ if [ -d "$REPO_ROOT/src" ] || [ -d "$REPO_ROOT/backends" ] || \
 
 [ -f "$REPO_ROOT/Cargo.toml" ] && HAS_RUST=1
 
+HAS_GO=0
+[ -f "$REPO_ROOT/go.mod" ] && HAS_GO=1
+
 [ "$HAS_PYTHON" -eq 1 ] && ok "Python project detected"
 [ "$HAS_JS" -eq 1 ]     && ok "JavaScript project detected"
 [ "$HAS_RUST" -eq 1 ]   && ok "Rust project detected"
-[ "$HAS_PYTHON" -eq 0 ] && [ "$HAS_JS" -eq 0 ] && [ "$HAS_RUST" -eq 0 ] && ok "No specific project type detected (generic)"
+[ "$HAS_GO" -eq 1 ]     && ok "Go project detected"
+[ "$HAS_PYTHON" -eq 0 ] && [ "$HAS_JS" -eq 0 ] && [ "$HAS_RUST" -eq 0 ] && [ "$HAS_GO" -eq 0 ] && ok "No specific project type detected (generic)"
 
 # ── 3. write env.lsp ──────────────────────────────────────────────────────
 
@@ -414,6 +427,18 @@ if [ -n "$LSP_MCP_BIN" ]; then
         CODEX_SEP=","
     fi
 
+    if [ "$HAS_GO" -eq 1 ] && [ -n "$LSP_GOPLS_BIN" ]; then
+        MCP_ENTRIES="${MCP_ENTRIES}${MCP_SEP}
+    \"language-server-go\": {
+      \"command\": \"$LSP_MCP_BIN\",
+      \"args\": [\"-workspace\", \"$REPO_ROOT\", \"-lsp\", \"$LSP_GOPLS_BIN\"],
+      \"env\": { \"LOG_LEVEL\": \"INFO\" }
+    }"
+        CODEX_SERVERS="${CODEX_SERVERS}${CODEX_SEP}{\"name\":\"language-server-go\",\"command\":\"$LSP_MCP_BIN\",\"args\":[\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_GOPLS_BIN\"],\"env\":{\"LOG_LEVEL\":\"INFO\"}}"
+        MCP_SEP=","
+        CODEX_SEP=","
+    fi
+
     if [ "$CODEX" -eq 1 ] && [ -n "$LSP_CODEX_BIN" ]; then
         MCP_ENTRIES="${MCP_ENTRIES}${MCP_SEP}
     \"codex\": {
@@ -509,6 +534,8 @@ echo "  ./start-lsp.sh            # verify prereqs (bridge stub)"
     echo "  Review pyrightconfig.json — adjust 'include'/'exclude' for this project"
 [ "$HAS_RUST" -eq 1 ] && [ -z "$LSP_RUST_BIN" ] && \
     echo "  rust-analyzer missing     # run: rustup component add rust-analyzer, then re-run"
+[ "$HAS_GO" -eq 1 ] && [ -z "$LSP_GOPLS_BIN" ] && \
+    echo "  gopls missing             # run: go install golang.org/x/tools/gopls@latest, then re-run"
 echo ""
 echo "To regenerate (e.g. after switching Python environments):"
 echo "  ./generate-env-lsp.sh"
