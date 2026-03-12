@@ -3,3 +3,4 @@ env.custom
 .mcp.json
 logs/
 releases/
+lsp-mcp-bridge/lsp-mcp-bridge

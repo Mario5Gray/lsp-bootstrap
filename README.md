@@ -176,6 +176,17 @@ Language auto-detection:
 | HTML | `*.html` (excluding `node_modules`) |
 | CSS/SCSS/Less | `*.css`, `*.scss`, `*.less` |
 
+### Multiple workspaces
+
+Each workspace gets its own bridge instance. `generate-env-lsp.sh` derives a stable port (in the range `7890–7989`) and a workspace-scoped PID file from the workspace path, so two terminals running their own `start-lsp.sh` will not conflict:
+
+```
+workspace/base1  →  port 7927  /tmp/lsp-bridge-base1.pid
+workspace/base2  →  port 7928  /tmp/lsp-bridge-base2.pid
+```
+
+Each workspace's `.mcp.json` points to its own port, so Claude Code sessions pick up the right bridge automatically.
+
 ### `env.lsp` and `env.custom`
 
 `env.lsp` is regenerated — never edit it directly. Put local overrides in `env.custom`:
@@ -183,7 +194,7 @@ Language auto-detection:
 ```bash
 # env.custom — gitignored, never committed
 LSP_PYTHON=/opt/homebrew/bin/python3.12
-LSP_PORT=7891
+LSP_PORT=7891  # manual override if the auto-assigned port conflicts
 ```
 
 ---
