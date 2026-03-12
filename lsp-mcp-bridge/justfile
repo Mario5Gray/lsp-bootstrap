@@ -1,0 +1,26 @@
+# List available commands
+help:
+    @just --list
+
+bin     := "lsp-mcp-bridge"
+release := "../releases"
+install_dir := env("INSTALL_DIR", home_directory() + "/.local/bin")
+
+# Build binary into releases/
+build:
+    mkdir -p {{release}}
+    go build -o {{release}}/{{bin}} .
+
+# Install binary to ~/.local/bin (override with INSTALL_DIR=...)
+install: build
+    mkdir -p {{install_dir}}
+    cp {{release}}/{{bin}} {{install_dir}}/{{bin}}
+    @echo "installed → {{install_dir}}/{{bin}}"
+
+# Run unit tests
+test:
+    go test ./...
+
+# Run unit tests with verbose output
+test-verbose:
+    go test -v ./...
