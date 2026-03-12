@@ -28,7 +28,13 @@ Replace the stub added in Step 2 with a real implementation.
 
 ### Dependency
 
-`github.com/sergi/go-diff/diffmatchpatch` is already in `go.mod`.
+`go mod tidy` drops unused imports, so `go-diff` may have been removed if nothing imports it yet. Before implementing this step, confirm it is present and re-add if needed:
+
+```bash
+grep sergi/go-diff go.mod || go get github.com/sergi/go-diff@v1.4.0
+```
+
+Then import:
 
 ```go
 import "github.com/sergi/go-diff/diffmatchpatch"
@@ -236,12 +242,15 @@ Extract `from.name`, `from.uri` → `URIToPath`, `from.range.start` → 1-based.
       "uri": "file:///path/worker.py",
       "range": { "start": { "line": 8, "character": 4 } }
     },
-    "fromRanges": [...]
+    "fromRanges": [{ "start": { "line": 13, "character": 11 } }]
   }
 ]
 ```
 
-Extract `to.name`, `to.uri`, `to.range.start`.
+- `to` — `CallHierarchyItem` for the callee (the function being called). `to.range.start` is where the callee is **defined**.
+- `fromRanges` — ranges within the **calling** function's body where the callee is invoked (the actual call sites).
+
+Extract `to.name`, `to.uri` → `URIToPath`, `to.range.start` → 1-based. This navigates to the callee's definition, which is the most useful location for an agent reviewing outgoing calls. If you instead want to navigate to the call site within the caller, use `fromRanges[0].start`.
 
 **Output type:**
 

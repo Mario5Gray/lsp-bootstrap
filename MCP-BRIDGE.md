@@ -367,7 +367,7 @@ All contention points, their locations, and the correct primitive. Resolve these
 |---|---|---|---|
 | Request ID counter | `lsp_client.go` | `sync/atomic.AddInt64` | Multiple goroutines call `Request` concurrently |
 | `pending` map | `lsp_client.go` | `sync.Mutex` | Reader goroutine deletes; request goroutines insert |
-| Notification listeners map | `lsp_client.go` | `sync.Mutex` (separate) | Must not share lock with `pending` |
+| Notification listeners map | `lsp_client.go` | `sync.Mutex` (shared with `pending`) | Both maps are small and the lock is held briefly; split only if profiling shows contention |
 | `isAlive` flag | `lsp_client.go` | `sync/atomic` bool | Hot read path in manager; avoid lock overhead |
 | Diagnostics listener registration | `lsp_client.go` / `tools_3a.go` | Sequencing, not a lock | Register listener **before** sending `didOpen` — not after |
 | Pending channel drain on crash | `lsp_client.go` | Drain under mutex | Send sentinel error to all `pending` channels on EOF so callers unblock |

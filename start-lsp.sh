@@ -73,22 +73,18 @@ if [ -f "$LSP_PID" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Phase 3 TODO: start bridge daemon
+# Start bridge daemon
 # ---------------------------------------------------------------------------
-# Replace this block when the bridge is built (Phase 3a).
-# Expected form:
-#
-#   mkdir -p "$(dirname "$LSP_LOG")"
-#   nohup python -m lsp_mcp_bridge \
-#       --workspace "$LSP_WORKSPACE" \
-#       --python    "$LSP_PYTHON" \
-#       --pyright   "$LSP_PYRIGHT_BIN" \
-#       --tss       "$LSP_TSS_BIN" \
-#       --port      "$LSP_PORT" \
-#       >> "$LSP_LOG" 2>&1 &
-#   echo $! > "$LSP_PID"
-#   echo "LSP bridge started (pid $(cat "$LSP_PID")) → http://localhost:$LSP_PORT/mcp"
-
-echo ""
-echo "[Phase 3 pending] Bridge not yet built."
-echo "Run ./check-types.sh to use pyright in check mode now."
+BRIDGE="$SCRIPT_DIR/lsp-mcp-bridge/lsp-mcp-bridge"
+if [ ! -f "$BRIDGE" ]; then
+    echo "Building lsp-mcp-bridge..."
+    (cd "$SCRIPT_DIR/lsp-mcp-bridge" && go build -o lsp-mcp-bridge .)
+fi
+mkdir -p "$(dirname "$LSP_LOG")"
+nohup "$BRIDGE" \
+    --workspace "$LSP_WORKSPACE" \
+    --port      "$LSP_PORT"      \
+    --env-lsp   "$SCRIPT_DIR/env.lsp" \
+    >> "$LSP_LOG" 2>&1 &
+echo $! > "$LSP_PID"
+echo "Started (pid $(cat "$LSP_PID")) → http://localhost:$LSP_PORT/mcp"

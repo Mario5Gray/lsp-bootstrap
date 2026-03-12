@@ -43,7 +43,8 @@ lsp-mcp-bridge/
   acceptance_test.go          # A1–A10, B1–B6, F1–F4 — all skipped initially
   testutil/
     mock_lsp.go               # mock LSP server: stdin→stdout JSON-RPC, scriptable responses
-    env.go                    # NewMockClient() helper; TempEnvLsp() fixture loader
+    env.go                    # FixturePath(), TempEnvLsp(), RealBinPath() helpers
+                              # Note: in-process client wiring is NewLspClientFromPipes() in lsp_client.go
     fixtures/
       env.lsp                 # fixture config with placeholder binary paths
       sample.py               # typed Python with a known symbol for hover/definition/references
@@ -180,7 +181,9 @@ type LspClient struct {
 }
 
 func NewLspClient(binary string, args []string) *LspClient
-func (c *LspClient) Start(ctx context.Context) error
+func (c *LspClient) Start(ctx context.Context) error  // ctx is accepted but not wired to exec.CommandContext;
+                                                       // cancelling ctx does NOT kill the subprocess.
+                                                       // Use Close() or Manager.Shutdown() for lifecycle control.
 func (c *LspClient) Initialize(workspace string) error
 func (c *LspClient) Request(method string, params any) (json.RawMessage, error)
 func (c *LspClient) Notify(method string, params any) error
@@ -188,7 +191,7 @@ func (c *LspClient) RegisterNotification(key string) chan json.RawMessage
 func (c *LspClient) Close()
 ```
 
-**`pending` and `listeners` share one mutex.** They are both small maps; the lock is held briefly. A separate mutex for each is only needed if profiling shows contention.
+**`pending` and `listeners` share one `sync.Mutex`.** Both maps are small and the lock is held only for map insert/delete, never across I/O. Split into separate mutexes only if profiling shows contention. (Note: an earlier draft of MCP-BRIDGE.md said to use separate mutexes — that was revised; the shared-mutex approach is the canonical choice.)
 
 **Reader goroutine** (`start` spawns it):
 
@@ -247,11 +250,12 @@ type slotState struct {
 }
 
 type Manager struct {
-    cfg     *Config
-    slots   map[string]*slotState   // keyed by slot name
-    routing map[string]string        // ext → slot name
-    mu      sync.Mutex
+    cfg   *Config
+    slots map[string]*slotState // keyed by slot name
+    defs  map[string]slotDef    // slot name → binary + args
+    mu    sync.Mutex
 }
+// Note: extension → slot routing is a package-level var (extToSlot), not a struct field.
 
 func NewManager(cfg *Config) *Manager
 func (m *Manager) GetClient(filePath string) (*LspClient, error)
@@ -353,12 +357,11 @@ func diagnosticsHandler(mgr *Manager) server.ToolHandlerFunc
 
 ```
 1. client = mgr.GetClient(filePath)
-2. content = os.ReadFile(filePath)
-3. uri = util.PathToURI(filePath)
-4. client.Notify("textDocument/didOpen", didOpenParams(uri, ext, content))
-5. result, err = client.Request("textDocument/<method>", params)
-6. client.Notify("textDocument/didClose", didCloseParams(uri))
-7. parse + return result
+2. uri, content, langID = openFile(filePath)   // reads file; derives langID via LanguageID(ext)
+3. client.Notify("textDocument/didOpen", didOpenParams(uri, langID, content))
+4. result, err = client.Request("textDocument/<method>", params)
+5. client.Notify("textDocument/didClose", didCloseParams(uri))
+6. parse + return result
 ```
 
 ### Diagnostics — ordering matters
@@ -368,11 +371,15 @@ func diagnosticsHandler(mgr *Manager) server.ToolHandlerFunc
 2. content = os.ReadFile(filePath)
 3. uri = util.PathToURI(filePath)
 4. ch = client.RegisterNotification("textDocument/publishDiagnostics:" + uri)
-5. client.Notify("textDocument/didOpen", didOpenParams(uri, ext, content))
-6. collect notifications from ch:
-     - on first receive: reset 200ms idle timer
-     - on each further receive before timer fires: extend/reset timer, merge
-     - on timer fire or 10s hard cap: stop collecting
+5. client.Notify("textDocument/didOpen", didOpenParams(uri, langID, content))
+6. start 200ms idle timer immediately (before first notification arrives)
+   collect notifications from ch:
+     - on each receive: reset the 200ms idle timer and merge diagnostics into result
+     - if no notification arrives within 200ms: stop collecting (timer fires)
+     - hard cap: stop after 10s regardless
+   WARNING: the timer starts before the first notification — if the server takes >200ms
+   to emit its first publishDiagnostics, the call returns empty. This is intentional for
+   fast servers; slow/cold servers may need a higher initial timeout.
 7. client.Notify("textDocument/didClose", didCloseParams(uri))
 8. return merged diagnostics
 ```
@@ -406,13 +413,18 @@ type Diagnostic struct {
 func main() {
     // 1. parse flags: --workspace, --port, --env-lsp, --env-custom
     // 2. cfg = config.Load(envLsp, envCustom, flags)
-    // 3. mgr = manager.NewManager(cfg)
-    // 4. defer mgr.Shutdown(ctx)
-    // 5. s = server.NewMCPServer("lsp", "0.1.0")
-    // 6. register tools: hover, definition, references, diagnostics
-    // 7. httpServer = server.NewStreamableHTTPServer(s)
-    // 8. log.Fatal(httpServer.Start(":" + cfg.Port))
+    // 3. mgr = NewManager(cfg)
+    // 4. s = server.NewMCPServer("lsp-mcp-bridge", "0.1.0")
+    // 5. register tools: hover, definition, references, diagnostics
+    // 6. httpServer = server.NewStreamableHTTPServer(s)
+    // 7. go httpServer.Start(":" + cfg.Port)   // non-blocking — Start blocks internally
+    // 8. ctx, stop = signal.NotifyContext(ctx, SIGINT, SIGTERM)
+    // 9. <-ctx.Done()
+    // 10. httpServer.Shutdown(shutCtx)         // closes listener; unblocks Start goroutine
+    // 11. mgr.Shutdown(shutCtx)
 }
+// WARNING: do NOT use log.Fatal(httpServer.Start(...)) — Start blocks and signal handling
+// never fires. Run Start in a goroutine; block main on the signal context instead.
 ```
 
 **Tool registration example:**
@@ -446,43 +458,7 @@ column,   err := req.RequireInt("column")
 - `TestDiagnosticsCleanFile` (integration) — clean file returns empty list
 - `TestDiagnosticsListenerBeforeDidOpen` (integration) — listener registered before `didOpen`; no missed notification
 - `TestE2EHoverViaCurl` (integration) — full HTTP round-trip returns correct result
-- Update `start-lsp.sh` stub with actual launch command
-
----
-
-## Updating `start-lsp.sh`
-
-Replace the Phase 3 TODO block with:
-
-```bash
-mkdir -p "$(dirname "$LSP_LOG")"
-nohup "$SCRIPT_DIR/lsp-mcp-bridge/lsp-mcp-bridge" \
-    --workspace "$LSP_WORKSPACE" \
-    --port      "$LSP_PORT"      \
-    --env-lsp   "$SCRIPT_DIR/env.lsp" \
-    >> "$LSP_LOG" 2>&1 &
-echo $! > "$LSP_PID"
-echo "Started (pid $(cat "$LSP_PID")) → http://localhost:$LSP_PORT/mcp"
-```
-
----
-
-## Updating `.mcp.json`
-
-Replace all per-language `mcp-language-server` entries with:
-
-```json
-{
-  "mcpServers": {
-    "lsp": {
-      "transport": "http",
-      "url": "http://localhost:7890/mcp"
-    }
-  }
-}
-```
-
-Restart Claude Code after updating.
+- `start-lsp.sh` and `.mcp.json` are updated in **Step 8 of IMPL-3B.md** (after 3b tools are wired). Do not update them here — the 3B version includes a `go build` auto-build guard that the 3A-only version lacks.
 
 ---
 
@@ -491,7 +467,7 @@ Restart Claude Code after updating.
 | Check | How |
 |---|---|
 | `hover` returns correct type | Integration test on `sample.py` known symbol |
-| `diagnostics` returns error | Integration test on `sample.py` with deliberate type mismatch |
+| `diagnostics` returns error | Integration test on `sample_error.py` (deliberate type mismatch) |
 | `diagnostics` returns empty on clean file | Integration test |
 | No notification lost on fast server | `TestDiagnosticsListenerBeforeDidOpen` |
 | Two concurrent `.py` requests → one process | `TestGetClientConcurrentSameSlot` |

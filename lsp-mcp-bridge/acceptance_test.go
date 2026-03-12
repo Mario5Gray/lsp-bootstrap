@@ -107,7 +107,7 @@ func TestA1_HoverResolvesType(t *testing.T) {
 
 	result := callTool(t, "hover", map[string]any{
 		"filePath": fixture("sample.py"),
-		"line":     28, // `result = fut.result()` — hover on `fut`
+		"line":     27, // `result = fut.result()` — hover on `fut`
 		"column":   12,
 	})
 
@@ -129,7 +129,7 @@ func TestA2_DefinitionReturnsLocation(t *testing.T) {
 
 	result := callTool(t, "definition", map[string]any{
 		"filePath": fixture("sample.py"),
-		"line":     22, // w.submit(b"ping") — REFERENCE line
+		"line":     23, // w.submit(b"ping") — REFERENCE line
 		"column":   7,  // position of `submit`
 	})
 
@@ -154,7 +154,7 @@ func TestA3_ReferencesReturnsCallSites(t *testing.T) {
 
 	result := callTool(t, "references", map[string]any{
 		"filePath": fixture("sample.py"),
-		"line":     15, // Worker.submit DEFINITION line
+		"line":     16, // Worker.submit DEFINITION line
 		"column":   9,
 	})
 
@@ -163,9 +163,9 @@ func TestA3_ReferencesReturnsCallSites(t *testing.T) {
 	}
 	text := resultText(t, result)
 
-	// Must include the REFERENCE call site on line 22
-	if !strings.Contains(text, "22") {
-		t.Errorf("A3: expected reference at line 22, got: %q", text)
+	// Must include the REFERENCE call site on line 23
+	if !strings.Contains(text, "23") {
+		t.Errorf("A3: expected reference at line 23, got: %q", text)
 	}
 }
 
@@ -337,7 +337,7 @@ func TestB1_RenameReturnsDiffNothingApplied(t *testing.T) {
 
 	result := callTool(t, "rename", map[string]any{
 		"filePath": path,
-		"line":     15, // Worker.submit DEFINITION
+		"line":     16, // Worker.submit DEFINITION
 		"column":   9,
 		"newName":  "dispatch",
 	})
@@ -368,7 +368,7 @@ func TestB2_RenameDiffCoversAllFiles(t *testing.T) {
 
 	result := callTool(t, "rename", map[string]any{
 		"filePath": fixture("sample.py"),
-		"line":     15,
+		"line":     16,
 		"column":   9,
 		"newName":  "dispatch",
 	})
@@ -378,7 +378,7 @@ func TestB2_RenameDiffCoversAllFiles(t *testing.T) {
 	}
 	text := resultText(t, result)
 
-	// sample.py has both the DEFINITION (line 15) and the REFERENCE (line 22).
+	// sample.py has both the DEFINITION (line 16) and the REFERENCE (line 23).
 	// The diff must contain at least one hunk covering both.
 	if strings.Count(text, "@@") < 1 {
 		t.Errorf("B2: expected at least one diff hunk, got: %q", text)
@@ -391,7 +391,7 @@ func TestB3_CallHierarchyInReturnsCallers(t *testing.T) {
 
 	result := callTool(t, "call_hierarchy_in", map[string]any{
 		"filePath": fixture("sample.py"),
-		"line":     15, // Worker.submit
+		"line":     16, // Worker.submit DEFINITION
 		"column":   9,
 	})
 
@@ -452,7 +452,7 @@ func TestB6_SignatureHelpReturnsParams(t *testing.T) {
 
 	result := callTool(t, "signature_help", map[string]any{
 		"filePath": fixture("sample.py"),
-		"line":     22,  // w.submit(b"ping") — inside argument list
+		"line":     23,  // w.submit(b"ping") — inside argument list
 		"column":   18,
 	})
 

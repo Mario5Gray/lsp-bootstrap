@@ -73,6 +73,35 @@ func main() {
 		mcp.WithString("filePath", mcp.Required(), mcp.Description("Absolute path to the source file")),
 	), diagnosticsHandler(mgr))
 
+	s.AddTool(mcp.NewTool("rename",
+		mcp.WithDescription("Rename a symbol and return a unified diff (nothing applied to disk)"),
+		mcp.WithString("filePath", mcp.Required(), mcp.Description("Absolute path to the source file")),
+		mcp.WithNumber("line", mcp.Required(), mcp.Description("Line number (1-based)")),
+		mcp.WithNumber("column", mcp.Required(), mcp.Description("Column number (1-based)")),
+		mcp.WithString("newName", mcp.Required(), mcp.Description("New symbol name")),
+	), renameHandler(mgr))
+
+	s.AddTool(mcp.NewTool("call_hierarchy_in",
+		mcp.WithDescription("Return all callers of the symbol at a position"),
+		mcp.WithString("filePath", mcp.Required(), mcp.Description("Absolute path to the source file")),
+		mcp.WithNumber("line", mcp.Required(), mcp.Description("Line number (1-based)")),
+		mcp.WithNumber("column", mcp.Required(), mcp.Description("Column number (1-based)")),
+	), callHierarchyInHandler(mgr))
+
+	s.AddTool(mcp.NewTool("call_hierarchy_out",
+		mcp.WithDescription("Return all callees of the symbol at a position"),
+		mcp.WithString("filePath", mcp.Required(), mcp.Description("Absolute path to the source file")),
+		mcp.WithNumber("line", mcp.Required(), mcp.Description("Line number (1-based)")),
+		mcp.WithNumber("column", mcp.Required(), mcp.Description("Column number (1-based)")),
+	), callHierarchyOutHandler(mgr))
+
+	s.AddTool(mcp.NewTool("signature_help",
+		mcp.WithDescription("Return parameter names and types for the call at a position"),
+		mcp.WithString("filePath", mcp.Required(), mcp.Description("Absolute path to the source file")),
+		mcp.WithNumber("line", mcp.Required(), mcp.Description("Line number (1-based)")),
+		mcp.WithNumber("column", mcp.Required(), mcp.Description("Column number (1-based)")),
+	), signatureHelpHandler(mgr))
+
 	httpServer := server.NewStreamableHTTPServer(s)
 
 	log.Printf("lsp-mcp-bridge listening on :%s", cfg.Port)
