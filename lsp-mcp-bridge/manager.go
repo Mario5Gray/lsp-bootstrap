@@ -176,6 +176,38 @@ func (m *Manager) startClient(slotName string, def slotDef, filePath string) (*L
 	return client, nil
 }
 
+// SlotStatus describes the runtime state of one language server slot.
+type SlotStatus struct {
+	Configured  bool   `json:"configured"`
+	Running     bool   `json:"running"`
+	Dead        bool   `json:"dead"`
+	Failures    int    `json:"failures,omitempty"`
+	LastFailure string `json:"last_failure,omitempty"`
+}
+
+// Health returns a snapshot of all slot states keyed by slot name.
+func (m *Manager) Health() map[string]SlotStatus {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make(map[string]SlotStatus, len(m.slots))
+	for name, state := range m.slots {
+		_, configured := m.defs[name]
+		s := SlotStatus{
+			Configured: configured,
+			Dead:       state.dead,
+			Failures:   state.failures,
+		}
+		if state.client != nil {
+			s.Running = state.client.isAlive.Load()
+		}
+		if !state.lastFailure.IsZero() {
+			s.LastFailure = state.lastFailure.UTC().Format(time.RFC3339)
+		}
+		out[name] = s
+	}
+	return out
+}
+
 // Shutdown gracefully stops all running language servers.
 func (m *Manager) Shutdown(ctx context.Context) {
 	m.mu.Lock()

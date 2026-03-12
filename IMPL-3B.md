@@ -495,3 +495,57 @@ No new concurrency primitives are needed. All 3b handlers follow the same open/r
 | Non-callable returns empty (not error) | Acceptance test B5 |
 | `signature_help` returns parameter list | Acceptance test B6 |
 | All B-series + F4 acceptance tests pass | `go test -tags acceptance ./...` |
+
+---
+
+## Post-3b addition: `/health` endpoint
+
+Added after Phase 3b completed. Documents a real operational issue: `GET /mcp` hangs forever because `NewStreamableHTTPServer` only handles MCP JSON-RPC POST requests — a bare GET has no defined response.
+
+### What was added
+
+`Manager.Health()` in `manager.go` — returns a snapshot of all slot states:
+
+```go
+type SlotStatus struct {
+    Configured  bool   `json:"configured"`
+    Running     bool   `json:"running"`
+    Dead        bool   `json:"dead"`
+    Failures    int    `json:"failures,omitempty"`
+    LastFailure string `json:"last_failure,omitempty"`
+}
+```
+
+`/health` handler in `main.go` — mounted on a custom `net/http.ServeMux` alongside `/mcp`:
+
+```go
+mux := http.NewServeMux()
+mux.HandleFunc("/health", ...)
+httpServer := server.NewStreamableHTTPServer(s,
+    server.WithStreamableHTTPServer(&http.Server{Handler: mux}),
+)
+mux.Handle("/mcp", httpServer)
+```
+
+Sample response:
+
+```json
+{
+  "status": "ok",
+  "uptime": "5s",
+  "version": "0.1.0",
+  "slots": {
+    "python":     {"configured": true, "running": false, "dead": false},
+    "typescript": {"configured": true, "running": false, "dead": false}
+  }
+}
+```
+
+Slots show `running: false` until the first tool call triggers lazy LSP client startup. `dead: true` means the slot exceeded its failure threshold and will not be retried.
+
+### Smoke test (corrected)
+
+```bash
+curl http://localhost:7890/health   # returns JSON immediately
+# NOT: curl http://localhost:7890/mcp  — hangs forever on GET
+```

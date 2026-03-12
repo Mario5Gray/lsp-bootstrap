@@ -200,3 +200,31 @@ Summary table:
   Nothing to fix now — issues.md is clean.
 
   --
+
+Immediate (unblock the bridge for daily use)
+
+  1. Smoke test start-lsp.sh — run it, confirm the binary builds, server starts, `curl http://localhost:7890/health` returns `{"status":"ok",...}`, then stop-lsp.sh cleans up.
+     Note: GET /mcp hangs — that endpoint only handles MCP JSON-RPC POST requests. Use /health for liveness checks.
+  2. Restart Claude Code — .mcp.json now has the lsp HTTP entry; Claude Code won't see the 8 new tools until it reloads.
+  3. Manual smoke test via Claude Code — call hover, rename, call_hierarchy_in on a real file in the workspace, confirm non-error results.
+
+  ---
+  Test coverage (still incomplete)
+
+  4. Integration tests for 3b — 8 tests listed in IMPL-3B Step 7, //go:build integration, against real pyright using sample_multifile/. These are the gate before unskipping acceptance tests.
+  5. Unskip B1–B6 and F4 acceptance tests — only after integration tests pass consistently.
+
+  ---
+  TODO.md items remaining
+
+  6. Update CLAUDE.md tool selection table — treesitter vs. LSP decision guide (which tool to reach for in which situation). This is listed in Phase 3b TODO.
+  7. TypeScript support — Manager currently only routes .py files to pyright. slotArgs has a typescript slot but it's not wired into GetClient routing for .ts/.tsx/.js files.
+
+  ---
+  Future / lower priority
+
+  8. Integration test with a pinned real-world repo — as discussed, a submodule fixture for realistic cross-file complexity.
+  9. Additional language servers — the table in TODO.md lists Go (gopls), Rust (rust-analyzer), and others if you want to expand beyond Python/TypeScript.
+
+  ---
+

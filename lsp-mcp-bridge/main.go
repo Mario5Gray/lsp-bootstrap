@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -102,7 +104,32 @@ func main() {
 		mcp.WithNumber("column", mcp.Required(), mcp.Description("Column number (1-based)")),
 	), signatureHelpHandler(mgr))
 
-	httpServer := server.NewStreamableHTTPServer(s)
+	startTime := time.Now()
+
+	mux := http.NewServeMux()
+
+	// /health — quick liveness + slot stats (GET)
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		type response struct {
+			Status  string                `json:"status"`
+			Uptime  string                `json:"uptime"`
+			Version string                `json:"version"`
+			Slots   map[string]SlotStatus `json:"slots"`
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response{ //nolint:errcheck
+			Status:  "ok",
+			Uptime:  time.Since(startTime).Round(time.Second).String(),
+			Version: "0.1.0",
+			Slots:   mgr.Health(),
+		})
+	})
+
+	httpServer := server.NewStreamableHTTPServer(s,
+		server.WithStreamableHTTPServer(&http.Server{Handler: mux}),
+	)
+	// Mount the MCP handler into our mux at /mcp
+	mux.Handle("/mcp", httpServer)
 
 	log.Printf("lsp-mcp-bridge listening on :%s", cfg.Port)
 
