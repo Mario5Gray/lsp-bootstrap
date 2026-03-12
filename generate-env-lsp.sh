@@ -341,8 +341,9 @@ done
 echo ""
 echo "Environment:"
 echo "  workspace   $LSP_WORKSPACE"
-echo "  port        $LSP_PORT  (bridge, Phase 3)"
+echo "  port        $LSP_PORT"
 echo "  log         $LSP_LOG"
+echo "  pid         $LSP_PID"
 
 if [ -f "$LSP_PID" ]; then
     pid=$(cat "$LSP_PID")
@@ -355,21 +356,20 @@ if [ -f "$LSP_PID" ]; then
     fi
 fi
 
-# Phase 3 TODO: replace this block with the bridge start command.
-#
-#   mkdir -p "$(dirname "$LSP_LOG")"
-#   nohup python -m lsp_mcp_bridge \
-#       --workspace "$LSP_WORKSPACE" \
-#       --python    "$LSP_PYTHON"    \
-#       --pyright   "$LSP_PYRIGHT_BIN" \
-#       --tss       "$LSP_TSS_BIN"  \
-#       --port      "$LSP_PORT"     \
-#       >> "$LSP_LOG" 2>&1 &
-#   echo $! > "$LSP_PID"
-#   echo "Started (pid $(cat "$LSP_PID")) → http://localhost:$LSP_PORT/mcp"
-
-echo ""
-echo "[Phase 3 pending] Bridge not yet built. Run ./check-types.sh for now."
+if ! BRIDGE=$(command -v lsp-mcp-bridge 2>/dev/null); then
+    echo "Error: lsp-mcp-bridge not found on PATH."
+    echo "  Install it with:  just install   (from the lsp-mcp-bridge source directory)"
+    echo "  Or manually:      cp /path/to/lsp-mcp-bridge ~/.local/bin/"
+    exit 1
+fi
+mkdir -p "$(dirname "$LSP_LOG")"
+nohup "$BRIDGE" \
+    --workspace "$LSP_WORKSPACE" \
+    --port      "$LSP_PORT"      \
+    --env-lsp   "$SCRIPT_DIR/env.lsp" \
+    >> "$LSP_LOG" 2>&1 &
+echo $! > "$LSP_PID"
+echo "Started (pid $(cat "$LSP_PID")) → http://localhost:$LSP_PORT/mcp"
 SCRIPT
 
 # ── 5. write stop-lsp.sh ──────────────────────────────────────────────────

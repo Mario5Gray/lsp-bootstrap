@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 # start-lsp.sh — verify LSP prerequisites and start the MCP bridge daemon.
-# Phase 2: prerequisite checks and env wiring.
-# Phase 3: replace the TODO block below with the actual bridge command.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -53,7 +51,7 @@ fi
 echo ""
 echo "Environment:"
 echo "  workspace   $LSP_WORKSPACE"
-echo "  port        $LSP_PORT  (bridge, Phase 3)"
+echo "  port        $LSP_PORT"
 echo "  log         $LSP_LOG"
 echo "  pid         $LSP_PID"
 
@@ -75,10 +73,11 @@ fi
 # ---------------------------------------------------------------------------
 # Start bridge daemon
 # ---------------------------------------------------------------------------
-BRIDGE="$SCRIPT_DIR/lsp-mcp-bridge/lsp-mcp-bridge"
-if [ ! -f "$BRIDGE" ]; then
-    echo "Building lsp-mcp-bridge..."
-    (cd "$SCRIPT_DIR/lsp-mcp-bridge" && go build -o lsp-mcp-bridge .)
+if ! BRIDGE=$(command -v lsp-mcp-bridge 2>/dev/null); then
+    echo "Error: lsp-mcp-bridge not found on PATH."
+    echo "  Install it with:  just install   (from the lsp-mcp-bridge source directory)"
+    echo "  Or manually:      cp /path/to/lsp-mcp-bridge ~/.local/bin/"
+    exit 1
 fi
 mkdir -p "$(dirname "$LSP_LOG")"
 nohup "$BRIDGE" \
