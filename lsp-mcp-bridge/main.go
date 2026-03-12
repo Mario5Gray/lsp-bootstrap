@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -43,9 +44,6 @@ func main() {
 	}
 
 	mgr := NewManager(cfg)
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-	defer mgr.Shutdown(context.Background())
 
 	s := server.NewMCPServer("lsp-mcp-bridge", "0.1.0")
 
@@ -80,11 +78,18 @@ func main() {
 	log.Printf("lsp-mcp-bridge listening on :%s", cfg.Port)
 
 	go func() {
-		<-ctx.Done()
-		log.Println("shutting down")
+		if err := httpServer.Start(":" + cfg.Port); err != nil {
+			log.Printf("server stopped: %v", err)
+		}
 	}()
 
-	if err := httpServer.Start(":" + cfg.Port); err != nil {
-		log.Fatalf("server: %v", err)
-	}
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	<-ctx.Done()
+
+	log.Println("shutting down")
+	shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	httpServer.Shutdown(shutCtx) //nolint:errcheck
+	mgr.Shutdown(shutCtx)
 }
