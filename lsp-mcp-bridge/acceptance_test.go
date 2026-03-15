@@ -14,6 +14,9 @@ package main_test
 //
 // These tests are black-box — they interact with the bridge via HTTP,
 // exactly as Claude Code would. No internal bridge packages are imported.
+// Each test should mirror the acceptance doc structure:
+//   Context -> Action -> Pass/Fail
+// and should assert only on information an agent can act on.
 
 import (
 	"bytes"
@@ -291,7 +294,7 @@ func TestA9_ConcurrentLanguagesResolveIndependently(t *testing.T) {
 		ch <- res{lang: lang, result: r}
 	}
 
-	go call("python", "sample.py", 28, 12)
+	go call("python", "sample.py", 27, 12)
 	go call("go", "sample.go", 17, 14) // hover on Run()
 
 	for i := 0; i < 2; i++ {
@@ -309,7 +312,7 @@ func TestA10_ColdStartLatency(t *testing.T) {
 	start := time.Now()
 	result := callTool(t, "hover", map[string]any{
 		"filePath": fixture("sample.py"),
-		"line":     28,
+		"line":     27,
 		"column":   12,
 	})
 	elapsed := time.Since(start)
@@ -366,11 +369,13 @@ func TestB1_RenameReturnsDiffNothingApplied(t *testing.T) {
 func TestB2_RenameDiffCoversAllFiles(t *testing.T) {
 	t.Skip("not yet implemented — remove after Step 7")
 
+	// This scenario must be genuinely cross-file: dispatcher.py references
+	// Worker.run() defined in worker.py.
 	result := callTool(t, "rename", map[string]any{
-		"filePath": fixture("sample.py"),
-		"line":     16,
+		"filePath": fixture("sample_multifile/worker.py"),
+		"line":     15, // Worker.run DEFINITION
 		"column":   9,
-		"newName":  "dispatch",
+		"newName":  "execute",
 	})
 
 	if isError(result) {
@@ -378,10 +383,14 @@ func TestB2_RenameDiffCoversAllFiles(t *testing.T) {
 	}
 	text := resultText(t, result)
 
-	// sample.py has both the DEFINITION (line 16) and the REFERENCE (line 23).
-	// The diff must contain at least one hunk covering both.
-	if strings.Count(text, "@@") < 1 {
-		t.Errorf("B2: expected at least one diff hunk, got: %q", text)
+	if !strings.Contains(text, "sample_multifile/worker.py") {
+		t.Errorf("B2: expected diff block for worker.py, got: %q", text)
+	}
+	if !strings.Contains(text, "sample_multifile/dispatcher.py") {
+		t.Errorf("B2: expected diff block for dispatcher.py, got: %q", text)
+	}
+	if !strings.Contains(text, "execute") || !strings.Contains(text, "run") {
+		t.Errorf("B2: expected diff to contain both old and new symbol names, got: %q", text)
 	}
 }
 
@@ -513,4 +522,3 @@ func TestF4_LargeRenameCompletesWithoutTruncation(t *testing.T) {
 	// Placeholder: validate that diff is non-empty and files are unchanged.
 	t.Log("F4: requires a multi-file fixture — to be added before Step 7")
 }
-

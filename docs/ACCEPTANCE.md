@@ -4,6 +4,16 @@ Scenario-based tests written from the agent's perspective. Each scenario describ
 
 Pass/fail is determined by whether the agent gets information it can correctly act on, not whether the underlying code ran without error.
 
+Each executable acceptance test should preserve that shape:
+
+- `Context` names the real agent situation
+- `Action` describes the single bridge/tool call the agent makes
+- `Pass` asserts only on agent-usable output and externally visible behavior
+- `Fail` rejects empty, misleading, slow, or non-actionable results
+
+These tests should not assert on bridge internals, private Go types, or
+implementation-only details that an agent cannot observe.
+
 ---
 
 ## Phase 3a
