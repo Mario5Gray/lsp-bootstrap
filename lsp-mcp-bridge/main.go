@@ -133,19 +133,9 @@ func main() {
 
 	log.Printf("lsp-mcp-bridge listening on :%s", cfg.Port)
 
-	go func() {
-		if err := httpServer.Start(":" + cfg.Port); err != nil {
-			log.Printf("server stopped: %v", err)
-		}
-	}()
-
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	<-ctx.Done()
-
-	log.Println("shutting down")
-	shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	httpServer.Shutdown(shutCtx) //nolint:errcheck
-	mgr.Shutdown(shutCtx)
+	if err := runBridge(ctx, httpServer, mgr, ":"+cfg.Port, log.Default()); err != nil {
+		log.Fatalf("server: %v", err)
+	}
 }
