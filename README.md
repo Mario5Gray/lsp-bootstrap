@@ -1,13 +1,13 @@
 # lsp-bootstrap
 
-A bootstrap kit that wires LSP (Language Server Protocol) tooling into any repo via a custom MCP bridge daemon. Drop in one script, run it, and get type-checking, go-to-definition, hover, call hierarchy, rename, and diagnostics available to Claude Code — all with machine-specific paths gitignored.
+A bootstrap kit that wires LSP (Language Server Protocol) tooling into any repo via a custom MCP bridge daemon. Drop in one script, run it, and get type-checking, go-to-definition, hover, call hierarchy, rename, and diagnostics available to Claude Code and opencode — all with machine-specific paths gitignored.
 
 ---
 
 ## How it works
 
 ```
-Claude Code
+Claude Code / opencode
     │  MCP HTTP (JSON-RPC)
     ▼
 lsp-mcp-bridge  (localhost:7890)    ← built here, started by start-lsp.sh
@@ -19,32 +19,23 @@ pyright-langserver / typescript-language-server / gopls / ...
 workspace files on disk
 ```
 
-`generate-env-lsp.sh` resolves binary paths on this machine and writes `env.lsp`. `start-lsp.sh` reads `env.lsp` and starts the bridge daemon. Claude Code connects to it via `.mcp.json`.
+`generate-env-lsp.sh` resolves binary paths on this machine and writes `env.lsp`. `start-lsp.sh` reads `env.lsp` and starts the bridge daemon. Claude Code connects via `.mcp.json`; opencode connects via `.opencode/opencode.json`.
 
 ---
 
 ## Quickstart
 
 ```bash
-# 1. Copy the generator into your target project
-cp generate-env-lsp.sh ~/workspace/my-project/
+# One-command bootstrap for any repo:
+~/workspace/lsp-bootstrap/bootstrap-repo.sh ~/workspace/my-project --all
+# Detects languages, writes config, builds bridge, starts daemon, checks health
+
+# Or step-by-step:
 cd ~/workspace/my-project/
-
-# 2. Generate env.lsp, start-lsp.sh, stop-lsp.sh, check-types.sh, .mcp.json
-./generate-env-lsp.sh
-
-# 3. Build and install the bridge binary
-cd /path/to/lsp-bootstrap/lsp-mcp-bridge
-just install          # installs to ~/.local/bin by default
-
-# 4. Start the bridge
-cd ~/workspace/my-project/
-./start-lsp.sh
-
-# 5. Verify it's running
-curl http://localhost:7890/health
-
-# 6. Restart Claude Code to load .mcp.json
+~/workspace/lsp-bootstrap/generate-env-lsp.sh --all
+~/workspace/lsp-bootstrap/lsp-mcp-bridge/just install
+make -f Makefile.lsp lsp-start
+make -f Makefile.lsp lsp-health
 ```
 
 ---
@@ -136,14 +127,28 @@ All tools take `filePath` (absolute path), `line` (1-based), and `column` (1-bas
 
 ## Generator scripts
 
+### `bootstrap-repo.sh` (Recommended)
+
+One-command bootstrap: detects languages, writes config, builds/installs the bridge, starts the daemon, and verifies health — all targeting any repo.
+
+```bash
+~/workspace/lsp-bootstrap/bootstrap-repo.sh ~/workspace/my-project --all
+~/workspace/lsp-bootstrap/bootstrap-repo.sh ~/workspace/my-project --codex
+~/workspace/lsp-bootstrap/bootstrap-repo.sh ~/workspace/my-project --opencode
+```
+
+Accepts the same flags as `generate-env-lsp.sh` (`--codex`, `--opencode`, `--all`). Always passes `--force` internally so generated files are overwritten on each run.
+
 ### `generate-env-lsp.sh`
 
 Run once per machine (re-run after switching Python envs or upgrading language servers).
 
 ```bash
-./generate-env-lsp.sh           # detect languages, write env.lsp + scripts + .mcp.json
+./generate-env-lsp.sh           # detect languages, write env.lsp + scripts + Makefile.lsp + .mcp.json
 ./generate-env-lsp.sh --force   # overwrite all previously generated files
 ./generate-env-lsp.sh --codex   # also wire the Codex CLI as an MCP server in .mcp.json
+./generate-env-lsp.sh --opencode  # also write .opencode/opencode.json for opencode
+./generate-env-lsp.sh --all     # wire Claude Code + Codex + opencode (equivalent to --codex --opencode)
 ```
 
 Writes:
@@ -153,9 +158,11 @@ Writes:
 | `env.lsp` | No | Machine-specific binary paths |
 | `env.custom` | No | Optional local overrides (sourced before `env.lsp`) |
 | `.mcp.json` | No | Wires bridge into Claude Code |
+| `.opencode/opencode.json` | No | Wires bridge into opencode (with `--opencode`) |
 | `start-lsp.sh` | Yes | Starts the bridge daemon |
 | `stop-lsp.sh` | Yes | Stops the bridge daemon |
 | `check-types.sh` | Yes | Runs pyright over the project |
+| `Makefile.lsp` | Yes | Optional make targets (`lsp-start`, `lsp-stop`, `lsp-check`, `lsp-health`) |
 | `pyrightconfig.json` | Yes | Python type-check config (scaffolded if missing) |
 | `jsconfig.json` | Yes | JS/TS config (scaffolded if missing) |
 
@@ -166,7 +173,7 @@ Language auto-detection:
 | Python | `setup.py`, `pyproject.toml`, `requirements.txt`, or common dirs |
 | JavaScript/TypeScript | `package.json`, `jsconfig.json` |
 | Rust | `Cargo.toml` |
-| Go | `go.mod` |
+| Go | `go.mod`, or `*.go` files (up to 3 levels deep) |
 | Kotlin | `build.gradle.kts`, `settings.gradle.kts`, `*.kt` |
 | Scala | `build.sbt`, `*.scala` |
 | Shell | `*.sh`, `Makefile`, `Dockerfile` |
@@ -227,11 +234,16 @@ Generates `jdtls-wrapper.sh` (gitignored) and a `.jdtls-data/` workspace index d
 
 | Command | What it does |
 |---|---|
+| `bootstrap-repo.sh <repo>` | Full bootstrap for a target repo (recommended) |
 | `./start-lsp.sh` | Start the bridge daemon |
 | `./stop-lsp.sh` | Stop the bridge daemon |
 | `curl localhost:7890/health` | Check bridge liveness and slot status |
 | `./check-types.sh` | Run pyright over the whole project |
 | `./check-types.sh path/to/file.py` | Check a single file |
+| `make -f Makefile.lsp lsp-start` | Start bridge via make |
+| `make -f Makefile.lsp lsp-stop` | Stop bridge via make |
+| `make -f Makefile.lsp lsp-check ARGS='path/to/file.py'` | Type-check one file via make |
+| `make -f Makefile.lsp lsp-health` | Health check using the project's generated port |
 | `./generate-env-lsp.sh` | Refresh `env.lsp` and `.mcp.json` after path changes |
 | `just install` | Rebuild and reinstall the bridge binary |
 
@@ -245,6 +257,21 @@ The generator appends to `.gitignore` automatically:
 env.lsp
 env.custom
 .mcp.json
+.opencode/opencode.json
 ```
 
 Safe to commit: `start-lsp.sh`, `stop-lsp.sh`, `check-types.sh`, `pyrightconfig.json`, `jsconfig.json`. Never commit `env.lsp` or `.mcp.json` — they contain machine-specific absolute paths.
+
+---
+
+## Troubleshooting
+
+### Go not detected
+
+If your Go project isn't detected, check:
+
+1. **`go.mod` exists at repo root** — the primary detection signal
+2. **`*.go` files exist within 3 levels** — fallback detection (same as Kotlin/Scala)
+3. If neither applies, initialize a module: `go mod init <module-name>`
+
+Then re-run: `./generate-env-lsp.sh --force`

@@ -5,9 +5,10 @@
 #   1. Resolve machine-specific binary paths
 #   2. Write a concrete env.lsp (baked-in absolute paths, no shell substitution)
 #   3. Write start-lsp.sh / stop-lsp.sh / check-types.sh if they don't exist
-#   4. Scaffold pyrightconfig.json if missing and Python sources detected
-#   5. Scaffold jsconfig.json if missing and a JS frontend detected
-#   6. Add env.lsp and env.custom to .gitignore
+#   4. Write Makefile.lsp task wrappers if it doesn't exist
+#   5. Scaffold pyrightconfig.json if missing and Python sources detected
+#   6. Scaffold jsconfig.json if missing and a JS frontend detected
+#   7. Add env.lsp and env.custom to .gitignore
 #
 # Re-run any time the Python environment changes (new venv, conda env, etc.).
 # Pass --force to overwrite existing generated files.
@@ -15,12 +16,20 @@ set -euo pipefail
 
 FORCE=0
 CODEX=0
+OPENCODE=0
+ALL=0
 for arg in "$@"; do
     [ "$arg" = "--force" ] && FORCE=1
     [ "$arg" = "--codex" ] && CODEX=1
+    [ "$arg" = "--opencode" ] && OPENCODE=1
+    [ "$arg" = "--all" ] && ALL=1
 done
 
+# --all enables all agent configs
+[ "$ALL" -eq 1 ] && CODEX=1 && OPENCODE=1
+
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+GENERATOR_SCRIPT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
 cd "$REPO_ROOT"
 
 # ── helpers ────────────────────────────────────────────────────────────────
@@ -207,6 +216,11 @@ if [ -d "$REPO_ROOT/src" ] || [ -d "$REPO_ROOT/backends" ] || \
 
 HAS_GO=0
 [ -f "$REPO_ROOT/go.mod" ] && HAS_GO=1
+if [ "$HAS_GO" -eq 0 ]; then
+    if find "$REPO_ROOT" -maxdepth 3 -name "*.go" -print -quit 2>/dev/null | grep -q .; then
+        HAS_GO=1
+    fi
+fi
 
 HAS_KOTLIN=0
 if [ -f "$REPO_ROOT/build.gradle.kts" ] || [ -f "$REPO_ROOT/settings.gradle.kts" ]; then
@@ -431,7 +445,38 @@ source "$SCRIPT_DIR/env.lsp"
 exec pyright --pythonpath "$LSP_PYTHON" "$@"
 SCRIPT
 
-# ── 7. scaffold pyrightconfig.json ────────────────────────────────────────
+# ── 7. write Makefile.lsp ─────────────────────────────────────────────────
+
+echo ""
+echo "Writing Makefile.lsp..."
+
+write_file "$REPO_ROOT/Makefile.lsp" << EOF
+LSP_GENERATOR ?= $GENERATOR_SCRIPT_PATH
+
+.PHONY: lsp-init lsp-start lsp-stop lsp-restart lsp-check lsp-health lsp-status
+
+lsp-init:
+	"\$(LSP_GENERATOR)"
+
+lsp-start:
+	./start-lsp.sh
+
+lsp-stop:
+	./stop-lsp.sh
+
+lsp-restart: lsp-stop lsp-start
+
+lsp-check:
+	./check-types.sh \$(ARGS)
+
+lsp-health:
+	@. ./env.lsp && curl -fsS "http://127.0.0.1:\$\${LSP_PORT}/health"
+
+lsp-status:
+	@. ./env.lsp && echo "LSP bridge health endpoint: http://127.0.0.1:\$\${LSP_PORT}/health"
+EOF
+
+# ── 8. scaffold pyrightconfig.json ────────────────────────────────────────
 
 if [ "$HAS_PYTHON" -eq 1 ] && [ ! -f "$REPO_ROOT/pyrightconfig.json" ]; then
     echo ""
@@ -466,7 +511,7 @@ EOF
     echo "  Review and adjust the 'include' list for this project."
 fi
 
-# ── 8. scaffold jsconfig.json ─────────────────────────────────────────────
+# ── 9. scaffold jsconfig.json ─────────────────────────────────────────────
 
 if [ "$HAS_JS" -eq 1 ]; then
     # Look for a frontend subdirectory with src/ inside
@@ -501,7 +546,7 @@ EOF
     fi
 fi
 
-# ── 9. write .mcp.json ────────────────────────────────────────────────────
+# ── 10. write .mcp.json ───────────────────────────────────────────────────
 
 if [ -n "$LSP_MCP_BIN" ]; then
     echo ""
@@ -692,7 +737,7 @@ if [ -n "$LSP_MCP_BIN" ]; then
     gitignore_add ".mcp.json"
 fi
 
-# ── 10. update ~/.codex/config.toml ───────────────────────────────────────
+# ── 11. update ~/.codex/config.toml ───────────────────────────────────────
 
 if [ -n "$LSP_MCP_BIN" ] && [ -n "$CODEX_SERVERS" ] && [ "$CODEX_SERVERS" != "[]" ]; then
     echo ""
@@ -737,18 +782,77 @@ if added:
 PYEOF
 fi
 
+# ── 12. write .opencode/opencode.json ─────────────────────────────────────
+
+if [ "$OPENCODE" -eq 1 ]; then
+    echo ""
+    echo "Writing .opencode/opencode.json..."
+
+    mkdir -p "$REPO_ROOT/.opencode"
+    OPENCODE_CONFIG="$REPO_ROOT/.opencode/opencode.json"
+
+    python3 - "$OPENCODE_CONFIG" "$FORCE" "$LSP_PORT" "$REPO_ROOT" << 'PYEOF'
+import sys, json, os
+
+config_path = sys.argv[1]
+force       = sys.argv[2] == "1"
+port        = sys.argv[3]
+workspace   = sys.argv[4]
+
+# Load existing config or start fresh
+if os.path.exists(config_path):
+    with open(config_path) as f:
+        data = json.load(f)
+else:
+    data = {}
+
+# Ensure mcp section exists
+data.setdefault("mcp", {})
+
+# Bridge entry — HTTP transport to the running bridge daemon
+bridge_key = "lsp"
+if bridge_key not in data["mcp"] or force:
+    data["mcp"][bridge_key] = {
+        "type": "http",
+        "url": f"http://127.0.0.1:{port}/mcp"
+    }
+    print(f"  wrote  {config_path} ← mcp.{bridge_key} (HTTP)")
+else:
+    if not force:
+        print(f"  skip   mcp.{bridge_key} (already exists; --force to overwrite)")
+    else:
+        data["mcp"][bridge_key] = {
+            "type": "http",
+            "url": f"http://127.0.0.1:{port}/mcp"
+        }
+        print(f"  wrote  {config_path} ← mcp.{bridge_key} (HTTP, updated)")
+
+with open(config_path, "w") as f:
+    json.dump(data, f, indent=2)
+    f.write("\n")
+PYEOF
+
+    gitignore_add ".opencode/opencode.json"
+fi
+
 # ── done ──────────────────────────────────────────────────────────────────
 
 echo ""
 echo "Done. Next steps:"
 echo "  ./check-types.sh          # run pyright now"
 echo "  ./start-lsp.sh            # verify prereqs (bridge stub)"
+echo "  make -f Makefile.lsp lsp-start   # same start via make"
+echo "  make -f Makefile.lsp lsp-check ARGS='path/to/file.py'  # pyright on one file"
 [ -n "$LSP_MCP_BIN" ] && \
     echo "  .mcp.json written         # restart Claude Code to pick up the MCP server(s)"
 [ "$CODEX" -eq 1 ] && [ -n "$LSP_CODEX_BIN" ] && \
     echo "  codex MCP added           # Codex AI coding agent available via .mcp.json"
 [ "$CODEX" -eq 1 ] && [ -z "$LSP_CODEX_BIN" ] && \
     echo "  codex missing             # run: npm install -g @openai/codex, then re-run with --codex"
+[ "$OPENCODE" -eq 1 ] && \
+    echo "  .opencode/opencode.json written  # opencode MCP config (HTTP to bridge)"
+[ "$ALL" -eq 1 ] && \
+    echo "  --all enabled                     # Claude Code + Codex + opencode"
 [ "$HAS_PYTHON" -eq 1 ] && [ "$FORCE" -eq 0 ] && \
     echo "  Review pyrightconfig.json — adjust 'include'/'exclude' for this project"
 [ "$HAS_RUST" -eq 1 ] && [ -z "$LSP_RUST_BIN" ] && \

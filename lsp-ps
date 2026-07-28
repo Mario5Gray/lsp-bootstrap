@@ -1,0 +1,12 @@
+#!/usr/bin/env sh
+# Show running lsp-mcp-bridge instances and their port→workspace mapping
+ps aux | grep lsp-mcp-bridge | grep -v grep | awk '
+{
+  port = ""; workspace = ""
+  for (i = 1; i <= NF; i++) {
+    if ($i == "--port") port = $(i+1)
+    if ($i == "--workspace") workspace = $(i+1)
+  }
+  if (port != "") printf "%-6s %s\n", port, workspace
+}
+' | sort -n
