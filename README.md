@@ -7,7 +7,7 @@ A bootstrap kit that wires LSP (Language Server Protocol) tooling into any repo 
 ## How it works
 
 ```
-Claude Code / opencode
+Claude Code / Codex / opencode (default: HTTP bridge)
     │  MCP HTTP (JSON-RPC)
     ▼
 lsp-mcp-bridge  (localhost:7890)    ← built here, started by start-lsp.sh
@@ -17,16 +17,27 @@ pyright-langserver / typescript-language-server / gopls / ...
     │  reads
     ▼
 workspace files on disk
+
+Alternative: per-language stdio (--stdio flag)
+Claude Code / Codex
+    │  stdio
+    ▼
+mcp-language-server  (one per language)
+    │  LSP (JSON-RPC over stdio)
+    ▼
+pyright-langserver / typescript-language-server / gopls / ...
 ```
 
-`generate-env-lsp.sh` resolves binary paths on this machine and writes `env.lsp`. `start-lsp.sh` reads `env.lsp` and starts the bridge daemon. Claude Code connects via `.mcp.json`; opencode connects via `.opencode/opencode.json`.
+Default: all agents connect through a single **HTTP bridge** daemon. The `--stdio` flag switches to per-language stdio servers (requires `mcp-language-server`).
+
+`generate-env-lsp.sh` resolves binary paths on this machine and writes `env.lsp`. `start-lsp.sh` reads `env.lsp` and starts the bridge daemon.
 
 ---
 
 ## Quickstart
 
 ```bash
-# One-command bootstrap for any repo:
+# One-command bootstrap for any repo (recommended):
 ~/workspace/lsp-bootstrap/bootstrap-repo.sh ~/workspace/my-project --all
 # Detects languages, writes config, builds bridge, starts daemon, checks health
 
@@ -38,6 +49,8 @@ make -f Makefile.lsp lsp-start
 make -f Makefile.lsp lsp-health
 ```
 
+`generate-env-lsp.sh` must be run from within the target repo (it uses `git rev-parse --show-toplevel` to find the root). `bootstrap-repo.sh` handles this automatically.
+
 ---
 
 ## Prerequisites
@@ -45,6 +58,10 @@ make -f Makefile.lsp lsp-health
 ```bash
 # Required — Python and TypeScript LSP
 npm install -g pyright typescript-language-server typescript
+
+# Optional — stdio wrapper (only needed with --stdio flag)
+# HTTP bridge mode (default) does not require this
+go install github.com/isaacs/mcp-language-server@latest
 
 # Optional — install only what your project needs
 rustup component add rust-analyzer          # Rust
@@ -56,6 +73,7 @@ npm install -g vscode-langservers-extracted # JSON, HTML, CSS
 
 # Kotlin — download from https://github.com/fwcd/kotlin-language-server/releases
 # Scala  — cs install metals
+# Codex  — npm install -g @openai/codex
 ```
 
 Java requires a generated wrapper script — see [Java](#java).
@@ -133,11 +151,11 @@ One-command bootstrap: detects languages, writes config, builds/installs the bri
 
 ```bash
 ~/workspace/lsp-bootstrap/bootstrap-repo.sh ~/workspace/my-project --all
-~/workspace/lsp-bootstrap/bootstrap-repo.sh ~/workspace/my-project --codex
-~/workspace/lsp-bootstrap/bootstrap-repo.sh ~/workspace/my-project --opencode
 ```
 
-Accepts the same flags as `generate-env-lsp.sh` (`--codex`, `--opencode`, `--all`). Always passes `--force` internally so generated files are overwritten on each run.
+By default wires all agents (Claude Code, Codex, opencode) through the **HTTP bridge** — a single daemon multiplexing all language servers. Pass `--stdio` to use per-language stdio servers instead (requires `mcp-language-server`).
+
+Flags: `--codex`, `--opencode`, `--all`, `--stdio`. Always passes `--force` internally.
 
 ### `generate-env-lsp.sh`
 
@@ -146,9 +164,10 @@ Run once per machine (re-run after switching Python envs or upgrading language s
 ```bash
 ./generate-env-lsp.sh           # detect languages, write env.lsp + scripts + Makefile.lsp + .mcp.json
 ./generate-env-lsp.sh --force   # overwrite all previously generated files
-./generate-env-lsp.sh --codex   # also wire the Codex CLI as an MCP server in .mcp.json
+./generate-env-lsp.sh --codex   # also wire Codex via ~/.codex/config.toml
 ./generate-env-lsp.sh --opencode  # also write .opencode/opencode.json for opencode
-./generate-env-lsp.sh --all     # wire Claude Code + Codex + opencode (equivalent to --codex --opencode)
+./generate-env-lsp.sh --all     # wire Claude Code + Codex + opencode
+./generate-env-lsp.sh --stdio   # use per-language stdio servers (default: HTTP bridge)
 ```
 
 Writes:
@@ -157,12 +176,13 @@ Writes:
 |---|---|---|
 | `env.lsp` | No | Machine-specific binary paths |
 | `env.custom` | No | Optional local overrides (sourced before `env.lsp`) |
-| `.mcp.json` | No | Wires bridge into Claude Code |
-| `.opencode/opencode.json` | No | Wires bridge into opencode (with `--opencode`) |
+| `.mcp.json` | No | Wires Claude Code to HTTP bridge (or per-language stdio with `--stdio`) |
+| `~/.codex/config.toml` | N/A | Wires per-language MCP servers into Codex (with `--codex`) |
+| `.opencode/opencode.json` | No | Wires bridge into opencode over HTTP (with `--opencode`) |
 | `start-lsp.sh` | Yes | Starts the bridge daemon |
 | `stop-lsp.sh` | Yes | Stops the bridge daemon |
 | `check-types.sh` | Yes | Runs pyright over the project |
-| `Makefile.lsp` | Yes | Optional make targets (`lsp-start`, `lsp-stop`, `lsp-check`, `lsp-health`) |
+| `Makefile.lsp` | Yes | Make targets (`lsp-init`, `lsp-start`, `lsp-stop`, `lsp-restart`, `lsp-check`, `lsp-health`, `lsp-status`) |
 | `pyrightconfig.json` | Yes | Python type-check config (scaffolded if missing) |
 | `jsconfig.json` | Yes | JS/TS config (scaffolded if missing) |
 
@@ -206,6 +226,73 @@ LSP_PORT=7891  # manual override if the auto-assigned port conflicts
 
 ---
 
+## Agent integration
+
+### Codex
+
+**Default (HTTP bridge)** — single entry, all languages through the bridge:
+
+```toml
+[mcp_servers.lsp]
+url = "http://127.0.0.1:7890/mcp"
+```
+
+**Stdio (with `--stdio`)** — per-language stdio entries via `mcp-language-server` wrappers:
+
+```toml
+[mcp_servers.language-server-python]
+command = "/path/to/mcp-language-server"
+transport = "stdio"
+args = ["-workspace", "/path/to/repo", "-lsp", "/path/to/pyright-langserver", "--", "--stdio"]
+env = {"LOG_LEVEL" = "INFO"}
+```
+
+Each stdio entry requires a separate `mcp-language-server` process. The HTTP bridge is one process handling all languages.
+
+If Codex is not installed, the generator warns but continues — Claude Code and opencode are still wired.
+
+**Prerequisites for Codex:**
+
+```bash
+npm install -g @openai/codex
+```
+
+### opencode
+
+With `--opencode`, entries are written to `.opencode/opencode.json` (per-repo config).
+
+**Default (HTTP bridge)** — single entry, all languages through the bridge:
+
+```json
+{
+  "mcp": {
+    "lsp": {
+      "type": "http",
+      "url": "http://127.0.0.1:7890/mcp"
+    }
+  }
+}
+```
+
+**Stdio (with `--stdio`)** — per-language stdio entries via `mcp-language-server` wrappers:
+
+```json
+{
+  "mcp": {
+    "language-server-go": {
+      "type": "local",
+      "command": ["/path/to/mcp-language-server", "-workspace", "/path/to/repo", "-lsp", "/path/to/gopls"]
+    }
+  }
+}
+```
+
+The bridge must be running (`make -f Makefile.lsp lsp-start`) for HTTP mode. Stdio mode launches servers on-demand.
+
+**Note:** `.opencode/opencode.json` is machine-specific and automatically added to `.gitignore`.
+
+---
+
 ## Java
 
 Java uses `jdtls`, which requires JVM flags, a launcher JAR, and a per-workspace data directory. A separate script generates a wrapper that `lsp-mcp-bridge` can launch like any other binary.
@@ -242,8 +329,10 @@ Generates `jdtls-wrapper.sh` (gitignored) and a `.jdtls-data/` workspace index d
 | `./check-types.sh path/to/file.py` | Check a single file |
 | `make -f Makefile.lsp lsp-start` | Start bridge via make |
 | `make -f Makefile.lsp lsp-stop` | Stop bridge via make |
+| `make -f Makefile.lsp lsp-restart` | Stop then start bridge via make |
 | `make -f Makefile.lsp lsp-check ARGS='path/to/file.py'` | Type-check one file via make |
 | `make -f Makefile.lsp lsp-health` | Health check using the project's generated port |
+| `make -f Makefile.lsp lsp-status` | Print the bridge health endpoint URL |
 | `./generate-env-lsp.sh` | Refresh `env.lsp` and `.mcp.json` after path changes |
 | `just install` | Rebuild and reinstall the bridge binary |
 
@@ -275,3 +364,13 @@ If your Go project isn't detected, check:
 3. If neither applies, initialize a module: `go mod init <module-name>`
 
 Then re-run: `./generate-env-lsp.sh --force`
+
+### Bridge won't start or health check fails
+
+- Check that `lsp-mcp-bridge` is on your PATH: `which lsp-mcp-bridge`
+- Check the bridge log: `cat logs/lsp-bridge.log`
+- Check for stale PID file: `rm /tmp/lsp-bridge-*.pid` and retry
+
+### Language server missing after detection
+
+If a language is detected but the server isn't wired, the generator printed a `warn` line during binary resolution. Install the missing binary (e.g. `go install golang.org/x/tools/gopls@latest`) and re-run with `--force`.

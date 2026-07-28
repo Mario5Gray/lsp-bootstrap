@@ -5,3 +5,4 @@ env.custom
 logs/
 releases/
 lsp-mcp-bridge/lsp-mcp-bridge
+.opencode/opencode.json

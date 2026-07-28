@@ -6,6 +6,7 @@
 #   ./bootstrap-repo.sh /path/to/repo --codex
 #   ./bootstrap-repo.sh /path/to/repo --opencode
 #   ./bootstrap-repo.sh /path/to/repo --all
+#   ./bootstrap-repo.sh /path/to/repo --stdio   # per-language stdio instead of bridge
 #
 # This script:
 #   1. Validates the target is a git repo
@@ -20,12 +21,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # ── arguments ──────────────────────────────────────────────────────────────
 
 if [ $# -lt 1 ]; then
-    echo "Usage: $0 <repo-path> [--codex|--opencode|--all]"
+    echo "Usage: $0 <repo-path> [--codex|--opencode|--all|--stdio]"
     echo ""
     echo "  <repo-path>  Path to the git repository to bootstrap"
     echo "  --codex      Also wire Codex CLI as MCP server"
     echo "  --opencode   Also write .opencode/opencode.json"
     echo "  --all        Wire Claude Code + Codex + opencode"
+    echo "  --stdio      Use per-language stdio servers (default: HTTP bridge)"
     exit 1
 fi
 

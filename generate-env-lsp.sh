@@ -12,21 +12,26 @@
 #
 # Re-run any time the Python environment changes (new venv, conda env, etc.).
 # Pass --force to overwrite existing generated files.
+# Pass --stdio to use per-language stdio servers instead of the HTTP bridge.
 set -euo pipefail
 
 FORCE=0
 CODEX=0
 OPENCODE=0
 ALL=0
+STDIO=0
 for arg in "$@"; do
     [ "$arg" = "--force" ] && FORCE=1
     [ "$arg" = "--codex" ] && CODEX=1
     [ "$arg" = "--opencode" ] && OPENCODE=1
     [ "$arg" = "--all" ] && ALL=1
+    [ "$arg" = "--stdio" ] && STDIO=1
 done
 
 # --all enables all agent configs
 [ "$ALL" -eq 1 ] && CODEX=1 && OPENCODE=1
+
+# Default: HTTP bridge mode for all agents. --stdio overrides to per-language stdio.
 
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 GENERATOR_SCRIPT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
@@ -546,204 +551,247 @@ EOF
     fi
 fi
 
-# ── 10. write .mcp.json ───────────────────────────────────────────────────
+# ── 10. write .mcp.json (Claude Code) ──────────────────────────────────────
 
-if [ -n "$LSP_MCP_BIN" ]; then
-    echo ""
-    echo "Writing .mcp.json..."
+echo ""
+echo "Writing .mcp.json..."
 
-    # Build mcpServers entries for each detected language
-    MCP_ENTRIES=""
-    MCP_SEP=""
-    # Parallel JSON array for ~/.codex/config.toml (same servers, different format)
-    CODEX_SERVERS="["
-    CODEX_SEP=""
+if [ "$STDIO" -eq 1 ]; then
+    # Stdio mode: per-language servers via mcp-language-server wrappers
+    if [ -z "$LSP_MCP_BIN" ]; then
+        printf "  \033[33mwarn\033[0m   mcp-language-server not found — stdio mode requires it\n"
+        printf "         Install: go install github.com/isaacs/mcp-language-server@latest\n"
+        printf "         Or re-run without --stdio to use HTTP bridge mode\n"
+    else
+        # Build mcpServers entries for each detected language
+        MCP_ENTRIES=""
+        MCP_SEP=""
 
-    if [ "$HAS_PYTHON" -eq 1 ]; then
-        MCP_ENTRIES="${MCP_ENTRIES}${MCP_SEP}
+        if [ "$HAS_PYTHON" -eq 1 ]; then
+            MCP_ENTRIES="${MCP_ENTRIES}${MCP_SEP}
     \"language-server-python\": {
       \"command\": \"$LSP_MCP_BIN\",
       \"args\": [\"-workspace\", \"$REPO_ROOT\", \"-lsp\", \"$LSP_PYRIGHT_BIN\", \"--\", \"--stdio\"],
       \"env\": { \"LOG_LEVEL\": \"INFO\" }
     }"
-        CODEX_SERVERS="${CODEX_SERVERS}${CODEX_SEP}{\"name\":\"language-server-python\",\"command\":\"$LSP_MCP_BIN\",\"args\":[\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_PYRIGHT_BIN\",\"--\",\"--stdio\"],\"env\":{\"LOG_LEVEL\":\"INFO\"}}"
-        MCP_SEP=","
-        CODEX_SEP=","
-    fi
+            MCP_SEP=","
+        fi
 
-    if [ "$HAS_JS" -eq 1 ]; then
-        MCP_ENTRIES="${MCP_ENTRIES}${MCP_SEP}
+        if [ "$HAS_JS" -eq 1 ]; then
+            MCP_ENTRIES="${MCP_ENTRIES}${MCP_SEP}
     \"language-server-js\": {
       \"command\": \"$LSP_MCP_BIN\",
       \"args\": [\"-workspace\", \"$REPO_ROOT\", \"-lsp\", \"$LSP_TSS_BIN\", \"--\", \"--stdio\"],
       \"env\": { \"LOG_LEVEL\": \"INFO\" }
     }"
-        CODEX_SERVERS="${CODEX_SERVERS}${CODEX_SEP}{\"name\":\"language-server-js\",\"command\":\"$LSP_MCP_BIN\",\"args\":[\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_TSS_BIN\",\"--\",\"--stdio\"],\"env\":{\"LOG_LEVEL\":\"INFO\"}}"
-        MCP_SEP=","
-        CODEX_SEP=","
-    fi
+            MCP_SEP=","
+        fi
 
-    if [ "$HAS_RUST" -eq 1 ] && [ -n "$LSP_RUST_BIN" ]; then
-        MCP_ENTRIES="${MCP_ENTRIES}${MCP_SEP}
+        if [ "$HAS_RUST" -eq 1 ] && [ -n "$LSP_RUST_BIN" ]; then
+            MCP_ENTRIES="${MCP_ENTRIES}${MCP_SEP}
     \"language-server-rust\": {
       \"command\": \"$LSP_MCP_BIN\",
       \"args\": [\"-workspace\", \"$REPO_ROOT\", \"-lsp\", \"$LSP_RUST_BIN\"],
       \"env\": { \"LOG_LEVEL\": \"INFO\" }
     }"
-        CODEX_SERVERS="${CODEX_SERVERS}${CODEX_SEP}{\"name\":\"language-server-rust\",\"command\":\"$LSP_MCP_BIN\",\"args\":[\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_RUST_BIN\"],\"env\":{\"LOG_LEVEL\":\"INFO\"}}"
-        MCP_SEP=","
-        CODEX_SEP=","
-    fi
+            MCP_SEP=","
+        fi
 
-    if [ "$HAS_GO" -eq 1 ] && [ -n "$LSP_GOPLS_BIN" ]; then
-        MCP_ENTRIES="${MCP_ENTRIES}${MCP_SEP}
+        if [ "$HAS_GO" -eq 1 ] && [ -n "$LSP_GOPLS_BIN" ]; then
+            MCP_ENTRIES="${MCP_ENTRIES}${MCP_SEP}
     \"language-server-go\": {
       \"command\": \"$LSP_MCP_BIN\",
       \"args\": [\"-workspace\", \"$REPO_ROOT\", \"-lsp\", \"$LSP_GOPLS_BIN\"],
       \"env\": { \"LOG_LEVEL\": \"INFO\" }
     }"
-        CODEX_SERVERS="${CODEX_SERVERS}${CODEX_SEP}{\"name\":\"language-server-go\",\"command\":\"$LSP_MCP_BIN\",\"args\":[\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_GOPLS_BIN\"],\"env\":{\"LOG_LEVEL\":\"INFO\"}}"
-        MCP_SEP=","
-        CODEX_SEP=","
-    fi
+            MCP_SEP=","
+        fi
 
-    if [ "$HAS_KOTLIN" -eq 1 ] && [ -n "$LSP_KOTLIN_BIN" ]; then
-        MCP_ENTRIES="${MCP_ENTRIES}${MCP_SEP}
+        if [ "$HAS_KOTLIN" -eq 1 ] && [ -n "$LSP_KOTLIN_BIN" ]; then
+            MCP_ENTRIES="${MCP_ENTRIES}${MCP_SEP}
     \"language-server-kotlin\": {
       \"command\": \"$LSP_MCP_BIN\",
       \"args\": [\"-workspace\", \"$REPO_ROOT\", \"-lsp\", \"$LSP_KOTLIN_BIN\"],
       \"env\": { \"LOG_LEVEL\": \"INFO\" }
     }"
-        CODEX_SERVERS="${CODEX_SERVERS}${CODEX_SEP}{\"name\":\"language-server-kotlin\",\"command\":\"$LSP_MCP_BIN\",\"args\":[\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_KOTLIN_BIN\"],\"env\":{\"LOG_LEVEL\":\"INFO\"}}"
-        MCP_SEP=","
-        CODEX_SEP=","
-    fi
+            MCP_SEP=","
+        fi
 
-    if [ "$HAS_SCALA" -eq 1 ] && [ -n "$LSP_METALS_BIN" ]; then
-        MCP_ENTRIES="${MCP_ENTRIES}${MCP_SEP}
+        if [ "$HAS_SCALA" -eq 1 ] && [ -n "$LSP_METALS_BIN" ]; then
+            MCP_ENTRIES="${MCP_ENTRIES}${MCP_SEP}
     \"language-server-scala\": {
       \"command\": \"$LSP_MCP_BIN\",
       \"args\": [\"-workspace\", \"$REPO_ROOT\", \"-lsp\", \"$LSP_METALS_BIN\"],
       \"env\": { \"LOG_LEVEL\": \"INFO\" }
     }"
-        CODEX_SERVERS="${CODEX_SERVERS}${CODEX_SEP}{\"name\":\"language-server-scala\",\"command\":\"$LSP_MCP_BIN\",\"args\":[\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_METALS_BIN\"],\"env\":{\"LOG_LEVEL\":\"INFO\"}}"
-        MCP_SEP=","
-        CODEX_SEP=","
-    fi
+            MCP_SEP=","
+        fi
 
-    if [ "$HAS_TOML" -eq 1 ] && [ -n "$LSP_TAPLO_BIN" ]; then
-        MCP_ENTRIES="${MCP_ENTRIES}${MCP_SEP}
+        if [ "$HAS_TOML" -eq 1 ] && [ -n "$LSP_TAPLO_BIN" ]; then
+            MCP_ENTRIES="${MCP_ENTRIES}${MCP_SEP}
     \"language-server-toml\": {
       \"command\": \"$LSP_MCP_BIN\",
       \"args\": [\"-workspace\", \"$REPO_ROOT\", \"-lsp\", \"$LSP_TAPLO_BIN\", \"--\", \"lsp\", \"stdio\"],
       \"env\": { \"LOG_LEVEL\": \"INFO\" }
     }"
-        CODEX_SERVERS="${CODEX_SERVERS}${CODEX_SEP}{\"name\":\"language-server-toml\",\"command\":\"$LSP_MCP_BIN\",\"args\":[\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_TAPLO_BIN\",\"--\",\"lsp\",\"stdio\"],\"env\":{\"LOG_LEVEL\":\"INFO\"}}"
-        MCP_SEP=","
-        CODEX_SEP=","
-    fi
+            MCP_SEP=","
+        fi
 
-    if [ "$HAS_JSON" -eq 1 ] && [ -n "$LSP_JSON_BIN" ]; then
-        MCP_ENTRIES="${MCP_ENTRIES}${MCP_SEP}
+        if [ "$HAS_JSON" -eq 1 ] && [ -n "$LSP_JSON_BIN" ]; then
+            MCP_ENTRIES="${MCP_ENTRIES}${MCP_SEP}
     \"language-server-json\": {
       \"command\": \"$LSP_MCP_BIN\",
       \"args\": [\"-workspace\", \"$REPO_ROOT\", \"-lsp\", \"$LSP_JSON_BIN\", \"--\", \"--stdio\"],
       \"env\": { \"LOG_LEVEL\": \"INFO\" }
     }"
-        CODEX_SERVERS="${CODEX_SERVERS}${CODEX_SEP}{\"name\":\"language-server-json\",\"command\":\"$LSP_MCP_BIN\",\"args\":[\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_JSON_BIN\",\"--\",\"--stdio\"],\"env\":{\"LOG_LEVEL\":\"INFO\"}}"
-        MCP_SEP=","
-        CODEX_SEP=","
-    fi
+            MCP_SEP=","
+        fi
 
-    if [ "$HAS_HTML" -eq 1 ] && [ -n "$LSP_HTML_BIN" ]; then
-        MCP_ENTRIES="${MCP_ENTRIES}${MCP_SEP}
+        if [ "$HAS_HTML" -eq 1 ] && [ -n "$LSP_HTML_BIN" ]; then
+            MCP_ENTRIES="${MCP_ENTRIES}${MCP_SEP}
     \"language-server-html\": {
       \"command\": \"$LSP_MCP_BIN\",
       \"args\": [\"-workspace\", \"$REPO_ROOT\", \"-lsp\", \"$LSP_HTML_BIN\", \"--\", \"--stdio\"],
       \"env\": { \"LOG_LEVEL\": \"INFO\" }
     }"
-        CODEX_SERVERS="${CODEX_SERVERS}${CODEX_SEP}{\"name\":\"language-server-html\",\"command\":\"$LSP_MCP_BIN\",\"args\":[\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_HTML_BIN\",\"--\",\"--stdio\"],\"env\":{\"LOG_LEVEL\":\"INFO\"}}"
-        MCP_SEP=","
-        CODEX_SEP=","
-    fi
+            MCP_SEP=","
+        fi
 
-    if [ "$HAS_CSS" -eq 1 ] && [ -n "$LSP_CSS_BIN" ]; then
-        MCP_ENTRIES="${MCP_ENTRIES}${MCP_SEP}
+        if [ "$HAS_CSS" -eq 1 ] && [ -n "$LSP_CSS_BIN" ]; then
+            MCP_ENTRIES="${MCP_ENTRIES}${MCP_SEP}
     \"language-server-css\": {
       \"command\": \"$LSP_MCP_BIN\",
       \"args\": [\"-workspace\", \"$REPO_ROOT\", \"-lsp\", \"$LSP_CSS_BIN\", \"--\", \"--stdio\"],
       \"env\": { \"LOG_LEVEL\": \"INFO\" }
     }"
-        CODEX_SERVERS="${CODEX_SERVERS}${CODEX_SEP}{\"name\":\"language-server-css\",\"command\":\"$LSP_MCP_BIN\",\"args\":[\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_CSS_BIN\",\"--\",\"--stdio\"],\"env\":{\"LOG_LEVEL\":\"INFO\"}}"
-        MCP_SEP=","
-        CODEX_SEP=","
-    fi
+            MCP_SEP=","
+        fi
 
-    if [ "$HAS_SHELL" -eq 1 ] && [ -n "$LSP_BASH_BIN" ]; then
-        MCP_ENTRIES="${MCP_ENTRIES}${MCP_SEP}
+        if [ "$HAS_SHELL" -eq 1 ] && [ -n "$LSP_BASH_BIN" ]; then
+            MCP_ENTRIES="${MCP_ENTRIES}${MCP_SEP}
     \"language-server-shell\": {
       \"command\": \"$LSP_MCP_BIN\",
       \"args\": [\"-workspace\", \"$REPO_ROOT\", \"-lsp\", \"$LSP_BASH_BIN\", \"--\", \"--stdio\"],
       \"env\": { \"LOG_LEVEL\": \"INFO\" }
     }"
-        CODEX_SERVERS="${CODEX_SERVERS}${CODEX_SEP}{\"name\":\"language-server-shell\",\"command\":\"$LSP_MCP_BIN\",\"args\":[\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_BASH_BIN\",\"--\",\"--stdio\"],\"env\":{\"LOG_LEVEL\":\"INFO\"}}"
-        MCP_SEP=","
-        CODEX_SEP=","
-    fi
+            MCP_SEP=","
+        fi
 
-    if [ "$HAS_YAML" -eq 1 ] && [ -n "$LSP_YAML_BIN" ]; then
-        MCP_ENTRIES="${MCP_ENTRIES}${MCP_SEP}
+        if [ "$HAS_YAML" -eq 1 ] && [ -n "$LSP_YAML_BIN" ]; then
+            MCP_ENTRIES="${MCP_ENTRIES}${MCP_SEP}
     \"language-server-yaml\": {
       \"command\": \"$LSP_MCP_BIN\",
       \"args\": [\"-workspace\", \"$REPO_ROOT\", \"-lsp\", \"$LSP_YAML_BIN\", \"--\", \"--stdio\"],
       \"env\": { \"LOG_LEVEL\": \"INFO\" }
     }"
-        CODEX_SERVERS="${CODEX_SERVERS}${CODEX_SEP}{\"name\":\"language-server-yaml\",\"command\":\"$LSP_MCP_BIN\",\"args\":[\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_YAML_BIN\",\"--\",\"--stdio\"],\"env\":{\"LOG_LEVEL\":\"INFO\"}}"
-        MCP_SEP=","
-        CODEX_SEP=","
-    fi
+            MCP_SEP=","
+        fi
 
-    if [ "$CODEX" -eq 1 ] && [ -n "$LSP_CODEX_BIN" ]; then
-        MCP_ENTRIES="${MCP_ENTRIES}${MCP_SEP}
-    \"codex\": {
-      \"command\": \"$LSP_CODEX_BIN\",
-      \"args\": [\"--mcp-server\"],
-      \"env\": {}
-    }"
-        MCP_SEP=","
-    fi
-
-    CODEX_SERVERS="${CODEX_SERVERS}]"
-
-    # Fallback: if no language detected, wire pyright as default
-    if [ -z "$MCP_ENTRIES" ]; then
-        MCP_ENTRIES="
+        # Fallback: if no language detected, wire pyright as default
+        if [ -z "$MCP_ENTRIES" ]; then
+            MCP_ENTRIES="
     \"language-server\": {
       \"command\": \"$LSP_MCP_BIN\",
       \"args\": [\"-workspace\", \"$REPO_ROOT\", \"-lsp\", \"$LSP_PYRIGHT_BIN\", \"--\", \"--stdio\"],
       \"env\": { \"LOG_LEVEL\": \"INFO\" }
     }"
-        CODEX_SERVERS="[{\"name\":\"language-server\",\"command\":\"$LSP_MCP_BIN\",\"args\":[\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_PYRIGHT_BIN\",\"--\",\"--stdio\"],\"env\":{\"LOG_LEVEL\":\"INFO\"}}]"
+        fi
+
+        if [ -f "$REPO_ROOT/.mcp.json" ] && [ "$FORCE" -eq 0 ]; then
+            skip ".mcp.json"
+        else
+            printf '{\n  "mcpServers": {%s\n  }\n}\n' "$MCP_ENTRIES" > "$REPO_ROOT/.mcp.json"
+            wrote ".mcp.json"
+        fi
+        gitignore_add ".mcp.json"
     fi
+else
+    # HTTP bridge mode (default): single entry pointing to the bridge
+    BRIDGE_URL="http://127.0.0.1:${LSP_GEN_PORT}/mcp"
 
     if [ -f "$REPO_ROOT/.mcp.json" ] && [ "$FORCE" -eq 0 ]; then
         skip ".mcp.json"
     else
-        printf '{\n  "mcpServers": {%s\n  }\n}\n' "$MCP_ENTRIES" > "$REPO_ROOT/.mcp.json"
+        cat > "$REPO_ROOT/.mcp.json" << EOF
+{
+  "mcpServers": {
+    "lsp": {
+      "url": "$BRIDGE_URL",
+      "transport": "streamable-http"
+    }
+  }
+}
+EOF
         wrote ".mcp.json"
     fi
-
-    # .mcp.json contains machine-specific absolute paths — gitignore it
     gitignore_add ".mcp.json"
 fi
 
 # ── 11. update ~/.codex/config.toml ───────────────────────────────────────
 
-if [ -n "$LSP_MCP_BIN" ] && [ -n "$CODEX_SERVERS" ] && [ "$CODEX_SERVERS" != "[]" ]; then
+if [ "$CODEX" -eq 1 ]; then
     echo ""
     echo "Updating ~/.codex/config.toml..."
 
-    python3 - "$CODEX_SERVERS" "$FORCE" << 'PYEOF'
+    if [ "$STDIO" -eq 1 ]; then
+        # Stdio mode: per-language servers
+        if [ -n "$LSP_MCP_BIN" ]; then
+            CODEX_SERVERS="["
+            CODEX_SEP=""
+
+            if [ "$HAS_PYTHON" -eq 1 ]; then
+                CODEX_SERVERS="${CODEX_SERVERS}${CODEX_SEP}{\"name\":\"language-server-python\",\"command\":\"$LSP_MCP_BIN\",\"args\":[\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_PYRIGHT_BIN\",\"--\",\"--stdio\"],\"env\":{\"LOG_LEVEL\":\"INFO\"}}"
+                CODEX_SEP=","
+            fi
+            if [ "$HAS_JS" -eq 1 ]; then
+                CODEX_SERVERS="${CODEX_SERVERS}${CODEX_SEP}{\"name\":\"language-server-js\",\"command\":\"$LSP_MCP_BIN\",\"args\":[\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_TSS_BIN\",\"--\",\"--stdio\"],\"env\":{\"LOG_LEVEL\":\"INFO\"}}"
+                CODEX_SEP=","
+            fi
+            if [ "$HAS_RUST" -eq 1 ] && [ -n "$LSP_RUST_BIN" ]; then
+                CODEX_SERVERS="${CODEX_SERVERS}${CODEX_SEP}{\"name\":\"language-server-rust\",\"command\":\"$LSP_MCP_BIN\",\"args\":[\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_RUST_BIN\"],\"env\":{\"LOG_LEVEL\":\"INFO\"}}"
+                CODEX_SEP=","
+            fi
+            if [ "$HAS_GO" -eq 1 ] && [ -n "$LSP_GOPLS_BIN" ]; then
+                CODEX_SERVERS="${CODEX_SERVERS}${CODEX_SEP}{\"name\":\"language-server-go\",\"command\":\"$LSP_MCP_BIN\",\"args\":[\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_GOPLS_BIN\"],\"env\":{\"LOG_LEVEL\":\"INFO\"}}"
+                CODEX_SEP=","
+            fi
+            if [ "$HAS_KOTLIN" -eq 1 ] && [ -n "$LSP_KOTLIN_BIN" ]; then
+                CODEX_SERVERS="${CODEX_SERVERS}${CODEX_SEP}{\"name\":\"language-server-kotlin\",\"command\":\"$LSP_MCP_BIN\",\"args\":[\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_KOTLIN_BIN\"],\"env\":{\"LOG_LEVEL\":\"INFO\"}}"
+                CODEX_SEP=","
+            fi
+            if [ "$HAS_SCALA" -eq 1 ] && [ -n "$LSP_METALS_BIN" ]; then
+                CODEX_SERVERS="${CODEX_SERVERS}${CODEX_SEP}{\"name\":\"language-server-scala\",\"command\":\"$LSP_MCP_BIN\",\"args\":[\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_METALS_BIN\"],\"env\":{\"LOG_LEVEL\":\"INFO\"}}"
+                CODEX_SEP=","
+            fi
+            if [ "$HAS_TOML" -eq 1 ] && [ -n "$LSP_TAPLO_BIN" ]; then
+                CODEX_SERVERS="${CODEX_SERVERS}${CODEX_SEP}{\"name\":\"language-server-toml\",\"command\":\"$LSP_MCP_BIN\",\"args\":[\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_TAPLO_BIN\",\"--\",\"lsp\",\"stdio\"],\"env\":{\"LOG_LEVEL\":\"INFO\"}}"
+                CODEX_SEP=","
+            fi
+            if [ "$HAS_JSON" -eq 1 ] && [ -n "$LSP_JSON_BIN" ]; then
+                CODEX_SERVERS="${CODEX_SERVERS}${CODEX_SEP}{\"name\":\"language-server-json\",\"command\":\"$LSP_MCP_BIN\",\"args\":[\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_JSON_BIN\",\"--\",\"--stdio\"],\"env\":{\"LOG_LEVEL\":\"INFO\"}}"
+                CODEX_SEP=","
+            fi
+            if [ "$HAS_HTML" -eq 1 ] && [ -n "$LSP_HTML_BIN" ]; then
+                CODEX_SERVERS="${CODEX_SERVERS}${CODEX_SEP}{\"name\":\"language-server-html\",\"command\":\"$LSP_MCP_BIN\",\"args\":[\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_HTML_BIN\",\"--\",\"--stdio\"],\"env\":{\"LOG_LEVEL\":\"INFO\"}}"
+                CODEX_SEP=","
+            fi
+            if [ "$HAS_CSS" -eq 1 ] && [ -n "$LSP_CSS_BIN" ]; then
+                CODEX_SERVERS="${CODEX_SERVERS}${CODEX_SEP}{\"name\":\"language-server-css\",\"command\":\"$LSP_MCP_BIN\",\"args\":[\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_CSS_BIN\",\"--\",\"--stdio\"],\"env\":{\"LOG_LEVEL\":\"INFO\"}}"
+                CODEX_SEP=","
+            fi
+            if [ "$HAS_SHELL" -eq 1 ] && [ -n "$LSP_BASH_BIN" ]; then
+                CODEX_SERVERS="${CODEX_SERVERS}${CODEX_SEP}{\"name\":\"language-server-shell\",\"command\":\"$LSP_MCP_BIN\",\"args\":[\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_BASH_BIN\",\"--\",\"--stdio\"],\"env\":{\"LOG_LEVEL\":\"INFO\"}}"
+                CODEX_SEP=","
+            fi
+            if [ "$HAS_YAML" -eq 1 ] && [ -n "$LSP_YAML_BIN" ]; then
+                CODEX_SERVERS="${CODEX_SERVERS}${CODEX_SEP}{\"name\":\"language-server-yaml\",\"command\":\"$LSP_MCP_BIN\",\"args\":[\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_YAML_BIN\",\"--\",\"--stdio\"],\"env\":{\"LOG_LEVEL\":\"INFO\"}}"
+                CODEX_SEP=","
+            fi
+
+            CODEX_SERVERS="${CODEX_SERVERS}]"
+
+            if [ "$CODEX_SERVERS" != "[]" ]; then
+                python3 - "$CODEX_SERVERS" "$FORCE" << 'PYEOF'
 import sys, json, os
 
 servers = json.loads(sys.argv[1])
@@ -754,6 +802,27 @@ os.makedirs(os.path.dirname(config_path), exist_ok=True)
 
 content = open(config_path).read() if os.path.exists(config_path) else ""
 
+
+def remove_toml_section(content, section_name):
+    """Remove a TOML section and all its sub-sections (.env, .tools.*, etc.)."""
+    lines = content.split('\n')
+    result = []
+    skip = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped == section_name:
+            skip = True
+            continue
+        if skip and stripped.startswith('[') and stripped.endswith(']'):
+            if stripped.startswith(section_name + '.'):
+                continue  # sub-section of target, still skip
+            else:
+                skip = False  # new section, stop skipping
+        if not skip:
+            result.append(line)
+    return '\n'.join(result)
+
+
 added = []
 for s in servers:
     section = f'[mcp_servers.{s["name"]}]'
@@ -761,11 +830,7 @@ for s in servers:
         print(f"  skip   {section} (already exists; --force to overwrite)")
         continue
     if section in content and force:
-        # Remove existing block before re-appending
-        import re
-        content = re.sub(
-            rf'\n?{re.escape(section)}[^\[]*', '', content, count=1
-        ).rstrip() + "\n"
+        content = remove_toml_section(content, section)
 
     args_toml = json.dumps(s["args"])
     env_pairs = ", ".join(f'"{k}" = "{v}"' for k, v in s.get("env", {}).items())
@@ -780,6 +845,62 @@ if added:
     for name in added:
         print(f"  wrote  ~/.codex/config.toml ← [mcp_servers.{name}]")
 PYEOF
+            fi
+        fi
+    else
+        # HTTP bridge mode (default): single entry pointing to the bridge
+        BRIDGE_URL="http://127.0.0.1:${LSP_GEN_PORT}/mcp"
+
+        python3 - "$BRIDGE_URL" "$FORCE" << 'PYEOF'
+import sys, os
+
+url   = sys.argv[1]
+force = sys.argv[2] == "1"
+
+config_path = os.path.expanduser("~/.codex/config.toml")
+os.makedirs(os.path.dirname(config_path), exist_ok=True)
+
+content = open(config_path).read() if os.path.exists(config_path) else ""
+
+
+def remove_toml_section(content, section_name):
+    """Remove a TOML section and all its sub-sections (.env, .tools.*, etc.)."""
+    lines = content.split('\n')
+    result = []
+    skip = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped == section_name:
+            skip = True
+            continue
+        if skip and stripped.startswith('[') and stripped.endswith(']'):
+            if stripped.startswith(section_name + '.'):
+                continue  # sub-section of target, still skip
+            else:
+                skip = False  # new section, stop skipping
+        if not skip:
+            result.append(line)
+    return '\n'.join(result)
+
+
+section = "[mcp_servers.lsp]"
+if section in content and not force:
+    print(f"  skip   {section} (already exists; --force to overwrite)")
+elif section in content and force:
+    content = remove_toml_section(content, section)
+    block = f'\n[mcp_servers.lsp]\nurl = "{url}"\n'
+    content += block
+    with open(config_path, "w") as f:
+        f.write(content)
+    print(f"  wrote  ~/.codex/config.toml ← [mcp_servers.lsp] (HTTP bridge)")
+else:
+    block = f'\n[mcp_servers.lsp]\nurl = "{url}"\n'
+    content += block
+    with open(config_path, "w") as f:
+        f.write(content)
+    print(f"  wrote  ~/.codex/config.toml ← [mcp_servers.lsp] (HTTP bridge)")
+PYEOF
+    fi
 fi
 
 # ── 12. write .opencode/opencode.json ─────────────────────────────────────
@@ -791,13 +912,121 @@ if [ "$OPENCODE" -eq 1 ]; then
     mkdir -p "$REPO_ROOT/.opencode"
     OPENCODE_CONFIG="$REPO_ROOT/.opencode/opencode.json"
 
-    python3 - "$OPENCODE_CONFIG" "$FORCE" "$LSP_PORT" "$REPO_ROOT" << 'PYEOF'
+    if [ "$STDIO" -eq 1 ]; then
+        # Stdio mode: per-language servers via mcp-language-server
+        if [ -z "$LSP_MCP_BIN" ]; then
+            printf "  \033[33mwarn\033[0m   mcp-language-server not found — stdio mode requires it\n"
+            printf "         Install: go install github.com/isaacs/mcp-language-server@latest\n"
+            printf "         Or re-run without --stdio to use HTTP bridge mode\n"
+        else
+            # Build MCP entries as JSON
+            OPENCODE_ENTRIES="{}"
+            TEMP_ENTRIES=""
+
+            if [ "$HAS_PYTHON" -eq 1 ]; then
+                TEMP_ENTRIES="\"language-server-python\":{\"type\":\"local\",\"command\":[\"$LSP_MCP_BIN\",\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_PYRIGHT_BIN\",\"--\",\"--stdio\"]}"
+            fi
+            if [ "$HAS_JS" -eq 1 ]; then
+                [ -n "$TEMP_ENTRIES" ] && TEMP_ENTRIES="${TEMP_ENTRIES},"
+                TEMP_ENTRIES="${TEMP_ENTRIES}\"language-server-js\":{\"type\":\"local\",\"command\":[\"$LSP_MCP_BIN\",\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_TSS_BIN\",\"--\",\"--stdio\"]}"
+            fi
+            if [ "$HAS_RUST" -eq 1 ] && [ -n "$LSP_RUST_BIN" ]; then
+                [ -n "$TEMP_ENTRIES" ] && TEMP_ENTRIES="${TEMP_ENTRIES},"
+                TEMP_ENTRIES="${TEMP_ENTRIES}\"language-server-rust\":{\"type\":\"local\",\"command\":[\"$LSP_MCP_BIN\",\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_RUST_BIN\"]}"
+            fi
+            if [ "$HAS_GO" -eq 1 ] && [ -n "$LSP_GOPLS_BIN" ]; then
+                [ -n "$TEMP_ENTRIES" ] && TEMP_ENTRIES="${TEMP_ENTRIES},"
+                TEMP_ENTRIES="${TEMP_ENTRIES}\"language-server-go\":{\"type\":\"local\",\"command\":[\"$LSP_MCP_BIN\",\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_GOPLS_BIN\"]}"
+            fi
+            if [ "$HAS_KOTLIN" -eq 1 ] && [ -n "$LSP_KOTLIN_BIN" ]; then
+                [ -n "$TEMP_ENTRIES" ] && TEMP_ENTRIES="${TEMP_ENTRIES},"
+                TEMP_ENTRIES="${TEMP_ENTRIES}\"language-server-kotlin\":{\"type\":\"local\",\"command\":[\"$LSP_MCP_BIN\",\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_KOTLIN_BIN\"]}"
+            fi
+            if [ "$HAS_SCALA" -eq 1 ] && [ -n "$LSP_METALS_BIN" ]; then
+                [ -n "$TEMP_ENTRIES" ] && TEMP_ENTRIES="${TEMP_ENTRIES},"
+                TEMP_ENTRIES="${TEMP_ENTRIES}\"language-server-scala\":{\"type\":\"local\",\"command\":[\"$LSP_MCP_BIN\",\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_METALS_BIN\"]}"
+            fi
+            if [ "$HAS_TOML" -eq 1 ] && [ -n "$LSP_TAPLO_BIN" ]; then
+                [ -n "$TEMP_ENTRIES" ] && TEMP_ENTRIES="${TEMP_ENTRIES},"
+                TEMP_ENTRIES="${TEMP_ENTRIES}\"language-server-toml\":{\"type\":\"local\",\"command\":[\"$LSP_MCP_BIN\",\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_TAPLO_BIN\",\"--\",\"lsp\",\"stdio\"]}"
+            fi
+            if [ "$HAS_JSON" -eq 1 ] && [ -n "$LSP_JSON_BIN" ]; then
+                [ -n "$TEMP_ENTRIES" ] && TEMP_ENTRIES="${TEMP_ENTRIES},"
+                TEMP_ENTRIES="${TEMP_ENTRIES}\"language-server-json\":{\"type\":\"local\",\"command\":[\"$LSP_MCP_BIN\",\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_JSON_BIN\",\"--\",\"--stdio\"]}"
+            fi
+            if [ "$HAS_HTML" -eq 1 ] && [ -n "$LSP_HTML_BIN" ]; then
+                [ -n "$TEMP_ENTRIES" ] && TEMP_ENTRIES="${TEMP_ENTRIES},"
+                TEMP_ENTRIES="${TEMP_ENTRIES}\"language-server-html\":{\"type\":\"local\",\"command\":[\"$LSP_MCP_BIN\",\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_HTML_BIN\",\"--\",\"--stdio\"]}"
+            fi
+            if [ "$HAS_CSS" -eq 1 ] && [ -n "$LSP_CSS_BIN" ]; then
+                [ -n "$TEMP_ENTRIES" ] && TEMP_ENTRIES="${TEMP_ENTRIES},"
+                TEMP_ENTRIES="${TEMP_ENTRIES}\"language-server-css\":{\"type\":\"local\",\"command\":[\"$LSP_MCP_BIN\",\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_CSS_BIN\",\"--\",\"--stdio\"]}"
+            fi
+            if [ "$HAS_SHELL" -eq 1 ] && [ -n "$LSP_BASH_BIN" ]; then
+                [ -n "$TEMP_ENTRIES" ] && TEMP_ENTRIES="${TEMP_ENTRIES},"
+                TEMP_ENTRIES="${TEMP_ENTRIES}\"language-server-shell\":{\"type\":\"local\",\"command\":[\"$LSP_MCP_BIN\",\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_BASH_BIN\",\"--\",\"--stdio\"]}"
+            fi
+            if [ "$HAS_YAML" -eq 1 ] && [ -n "$LSP_YAML_BIN" ]; then
+                [ -n "$TEMP_ENTRIES" ] && TEMP_ENTRIES="${TEMP_ENTRIES},"
+                TEMP_ENTRIES="${TEMP_ENTRIES}\"language-server-yaml\":{\"type\":\"local\",\"command\":[\"$LSP_MCP_BIN\",\"-workspace\",\"$REPO_ROOT\",\"-lsp\",\"$LSP_YAML_BIN\",\"--\",\"--stdio\"]}"
+            fi
+
+            # Write entries to a temp file for Python to read
+            TMPENTRIES=$(mktemp)
+            echo "{$TEMP_ENTRIES}" > "$TMPENTRIES"
+
+            python3 - "$OPENCODE_CONFIG" "$FORCE" "$TMPENTRIES" << 'PYEOF'
+import sys, json, os
+
+config_path = sys.argv[1]
+force       = sys.argv[2] == "1"
+entries_file = sys.argv[3]
+
+with open(entries_file) as f:
+    entries = json.load(f)
+os.unlink(entries_file)
+
+# Load existing config or start fresh
+if os.path.exists(config_path):
+    with open(config_path) as f:
+        data = json.load(f)
+else:
+    data = {}
+
+# Ensure mcp section exists
+data.setdefault("mcp", {})
+
+added = []
+for name, entry in entries.items():
+    if name not in data["mcp"] or force:
+        data["mcp"][name] = entry
+        added.append(name)
+    else:
+        if not force:
+            print(f"  skip   mcp.{name} (already exists; --force to overwrite)")
+
+if added:
+    with open(config_path, "w") as f:
+        json.dump(data, f, indent=2)
+        f.write("\n")
+    for name in added:
+        print(f"  wrote  {config_path} ← mcp.{name} (stdio)")
+else:
+    # Even if all skipped, ensure file exists with current state
+    if not os.path.exists(config_path):
+        with open(config_path, "w") as f:
+            json.dump(data, f, indent=2)
+            f.write("\n")
+PYEOF
+        fi
+    else
+        # HTTP bridge mode (default): single entry pointing to the bridge
+        python3 - "$OPENCODE_CONFIG" "$FORCE" "$LSP_GEN_PORT" << 'PYEOF'
 import sys, json, os
 
 config_path = sys.argv[1]
 force       = sys.argv[2] == "1"
 port        = sys.argv[3]
-workspace   = sys.argv[4]
 
 # Load existing config or start fresh
 if os.path.exists(config_path):
@@ -816,6 +1045,9 @@ if bridge_key not in data["mcp"] or force:
         "type": "http",
         "url": f"http://127.0.0.1:{port}/mcp"
     }
+    with open(config_path, "w") as f:
+        json.dump(data, f, indent=2)
+        f.write("\n")
     print(f"  wrote  {config_path} ← mcp.{bridge_key} (HTTP)")
 else:
     if not force:
@@ -825,12 +1057,12 @@ else:
             "type": "http",
             "url": f"http://127.0.0.1:{port}/mcp"
         }
+        with open(config_path, "w") as f:
+            json.dump(data, f, indent=2)
+            f.write("\n")
         print(f"  wrote  {config_path} ← mcp.{bridge_key} (HTTP, updated)")
-
-with open(config_path, "w") as f:
-    json.dump(data, f, indent=2)
-    f.write("\n")
 PYEOF
+    fi
 
     gitignore_add ".opencode/opencode.json"
 fi
@@ -874,3 +1106,4 @@ echo "  make -f Makefile.lsp lsp-check ARGS='path/to/file.py'  # pyright on one 
 echo ""
 echo "To regenerate (e.g. after switching Python environments):"
 echo "  ./generate-env-lsp.sh"
+echo "  ./generate-env-lsp.sh --stdio  # use per-language stdio servers instead of bridge"
